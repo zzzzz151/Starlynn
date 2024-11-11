@@ -1,0 +1,9 @@
+.vscode/
+target/
+
+**/*.exe
+**/starlynn
+**/*.pdb
+**/*.txt
+**/*.epd
+**/*.pgn
