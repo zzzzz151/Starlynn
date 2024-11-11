@@ -1,0 +1,8 @@
+[package]
+name = "starlynn"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+strum = { version = "0.26.3", features = ["derive"] }
+arrayvec = "0.7.6"
