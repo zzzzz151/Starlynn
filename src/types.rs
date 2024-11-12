@@ -1,14 +1,15 @@
 use strum::FromRepr;
+use strum_macros::EnumIter;
 use std::fmt;
 use std::ops::{Not, Index, IndexMut};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, FromRepr)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, FromRepr, EnumIter)]
 #[repr(u8)]
 pub enum Color {
     White, Black
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, FromRepr)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, FromRepr, EnumIter)]
 #[repr(u8)]
 pub enum Square {
     A1, B1, C1, D1, E1, F1, G1, H1,
@@ -21,19 +22,19 @@ pub enum Square {
     A8, B8, C8, D8, E8, F8, G8, H8
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, FromRepr)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, FromRepr, EnumIter)]
 #[repr(u8)]
 pub enum File {
     A, B, C, D, E, F, G, H
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, FromRepr)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, FromRepr, EnumIter)]
 #[repr(u8)]
 pub enum Rank {
     Rank1, Rank2, Rank3, Rank4, Rank5, Rank6, Rank7, Rank8
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, FromRepr)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, FromRepr, EnumIter)]
 #[repr(u8)]
 pub enum PieceType {
     Pawn, Knight, Bishop, Rook, Queen, King
@@ -243,7 +244,8 @@ impl TryFrom<&str> for PieceType
 
     fn try_from(s: &str) -> Result<Self, Self::Error>
     {
-        match s.to_uppercase().as_str() {
+        match s.to_uppercase().as_str()
+        {
             "P" => Ok(PieceType::Pawn),
             "N" => Ok(PieceType::Knight),
             "B" => Ok(PieceType::Bishop),

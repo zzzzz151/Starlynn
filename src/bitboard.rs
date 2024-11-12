@@ -5,7 +5,7 @@ use std::ops::{
 
 use crate::types::Square;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Bitboard {
     bitboard: u64
 }
@@ -46,10 +46,14 @@ impl Bitboard {
         (self & Self::from(square)) != Bitboard::EMPTY
     }
 
-    pub fn first_square(self) -> Square
+    pub fn first_square(self) -> Option<Square>
     {
-        debug_assert!(self != Bitboard::EMPTY);
-        unsafe { std::mem::transmute(self.bitboard.trailing_zeros() as u8) }
+        if self == Bitboard::EMPTY {
+            return None;
+        }
+
+        let square_idx = self.bitboard.trailing_zeros() as u8;
+        unsafe { Some(std::mem::transmute(square_idx)) }
     }
 }
 
@@ -77,15 +81,13 @@ impl Iterator for Bitboard
 
     fn next(&mut self) -> Option<Self::Item>
     {
-        if *self != Bitboard::EMPTY
-        {
-            let square: Square = self.first_square();
+        let square: Option<Square> = self.first_square();
+
+        if square != None {
             self.bitboard &= self.bitboard - 1;
-            Some(square)
         }
-        else {
-            None
-        }
+
+        square
     }
 }
 
@@ -170,7 +172,7 @@ mod tests {
     #[test]
     fn test_bitboard() {
         let mut bb = Bitboard::from(Square::A5);
-        assert_eq!(bb.first_square(), Square::A5);
+        assert_eq!(bb.first_square().unwrap(), Square::A5);
         assert_eq!(bb.count(), 1);
 
         bb |= Bitboard::from(Square::D4);

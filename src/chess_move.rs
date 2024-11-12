@@ -1,6 +1,6 @@
 use crate::types::{Square, Rank, PieceType};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct ChessMove {
     mov: u16
 }
@@ -22,11 +22,7 @@ impl ChessMove {
 
     pub fn promotion(from: Square, to: Square, promotion: PieceType) -> Self
     {
-        debug_assert!(
-            (from.rank() == Rank::Rank7 && to.rank() == Rank::Rank8) ||
-            (from.rank() == Rank::Rank2 && to.rank() == Rank::Rank1)
-        );
-
+        debug_assert!(from.rank() >= Rank::Rank7 || from.rank() <= Rank::Rank2);
         debug_assert!(promotion != PieceType::Pawn && promotion != PieceType::King);
 
         let mut mov = Self::set_from_to(from, to);
