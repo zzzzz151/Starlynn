@@ -48,9 +48,7 @@ impl Bitboard {
 
     pub fn first_square(self) -> Option<Square>
     {
-        if self == Bitboard::EMPTY {
-            return None;
-        }
+        if self == Bitboard::EMPTY { return None; }
 
         let square_idx = self.bitboard.trailing_zeros() as u8;
         unsafe { Some(std::mem::transmute(square_idx)) }

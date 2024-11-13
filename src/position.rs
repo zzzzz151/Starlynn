@@ -1,8 +1,8 @@
 use arrayvec::ArrayVec;
 use crate::types::{Color, Square, PieceType};
 use crate::bitboard::Bitboard;
-use crate::pos_state::*;
 use crate::chess_move::ChessMove;
+use crate::pos_state::*;
 
 #[derive(Clone, Debug)]
 pub struct Position {
@@ -80,8 +80,11 @@ impl Position {
 
     pub fn attackers(&self, square: Square) -> Bitboard { self.state.attackers(square) }
 
-    pub fn is_draw(&self, num_moves: usize) -> bool {
-        self.state.is_draw(num_moves, &self.hashes_exclusive)
+    pub fn is_draw(&mut self) -> bool
+    {
+        let has_move = self.state.has_move();
+        debug_assert!(has_move == (self.state.moves(true).len() > 0));
+        self.state.is_draw(has_move, &self.hashes_exclusive)
     }
 
     pub fn make_move(&mut self, mov: ChessMove)
@@ -116,57 +119,49 @@ mod tests {
     #[test]
     fn test_draw() {
         // KvK
-        assert!(Position::try_from("4k3/8/8/8/8/8/8/4K3 w - - 0 1")
-            .unwrap().is_draw(5)
-        );
+        assert!(Position::try_from("4k3/8/8/8/8/8/8/4K3 w - - 0 1").unwrap().is_draw());
 
         // KvR
-        assert!(!Position::try_from("4k3/8/8/8/8/8/8/3RK3 w - - 0 1")
-            .unwrap().is_draw(14)
-        );
+        assert!(!Position::try_from("4k3/8/8/8/8/8/8/3RK3 w - - 0 1").unwrap().is_draw());
 
         // KvR, 50 moves rule
-        assert!(Position::try_from("4k3/8/8/8/8/8/8/3RK3 w - - 100 1")
-            .unwrap().is_draw(14)
-        );
+        assert!(Position::try_from("4k3/8/8/8/8/8/8/3RK3 w - - 100 1").unwrap().is_draw());
 
         // Checkmate, 50 moves rule
-        assert!(!Position::try_from("8/8/8/8/8/8/5KQ1/7k b - - 100 1")
-            .unwrap().is_draw(0)
-        );
+        assert!(!Position::try_from("8/8/8/8/8/8/5KQ1/7k b - - 100 1").unwrap().is_draw());
 
         // Repetition
 
         let mut pos = Position::try_from(START_FEN).unwrap();
-        assert!(!pos.is_draw(20));
+        assert!(!pos.is_draw());
 
         pos.make_move(ChessMove::new(Square::B1, Square::C3, PieceType::Knight));
-        assert!(!pos.is_draw(20));
+        assert!(!pos.is_draw());
 
         pos.make_move(ChessMove::new(Square::B8, Square::C6, PieceType::Knight));
-        assert!(!pos.is_draw(22));
+        assert!(!pos.is_draw());
 
         pos.make_move(ChessMove::new(Square::C3, Square::B1, PieceType::Knight));
-        assert!(!pos.is_draw(22));
+        assert!(!pos.is_draw());
 
         let pos_before_repetition = pos.clone();
 
         pos.make_move(ChessMove::new(Square::C6, Square::B8, PieceType::Knight));
-        assert!(pos.is_draw(20));
+        assert!(pos.is_draw());
 
         let pos_at_repetition = pos.clone();
 
         pos.make_move(ChessMove::new(Square::E2, Square::E4, PieceType::Pawn));
-        assert!(!pos.is_draw(20));
+        assert!(!pos.is_draw());
 
         pos = pos_at_repetition.clone();
 
         pos.make_move(ChessMove::new(Square::B1, Square::C3, PieceType::Knight));
-        assert!(pos.is_draw(20));
+        assert!(pos.is_draw());
 
         pos = pos_before_repetition.clone();
 
         pos.make_move(ChessMove::new(Square::E7, Square::E5, PieceType::Pawn));
-        assert!(!pos.is_draw(20));
+        assert!(!pos.is_draw());
     }
 }

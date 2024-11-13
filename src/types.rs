@@ -137,9 +137,7 @@ impl TryFrom<&str> for Square {
 
     fn try_from(s: &str) -> Result<Self, Self::Error>
     {
-        if s.len() != 2 {
-            return Err(());
-        }
+        if s.len() != 2 { return Err(()); }
 
         let mut chars = s.chars();
         let file_char = chars.next().unwrap().to_ascii_lowercase() as u8;
@@ -305,14 +303,7 @@ mod tests {
     #[test]
     fn test_piece_type()
     {
-        assert_eq!(
-            PieceType::try_from("n").unwrap(),
-            PieceType::Knight
-        );
-
-        assert_eq!(
-            PieceType::try_from("N").unwrap(),
-            PieceType::Knight
-        );
+        assert_eq!(PieceType::try_from("n").unwrap(), PieceType::Knight);
+        assert_eq!(PieceType::try_from("N").unwrap(), PieceType::Knight);
     }
 }

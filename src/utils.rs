@@ -69,13 +69,9 @@ mod tests {
     fn test_between_exclusive() {
         // Vertical
 
-        assert_eq!(
-            BETWEEN_EXCLUSIVE[Square::B2][Square::B3], Bitboard::EMPTY
-        );
+        assert_eq!(BETWEEN_EXCLUSIVE[Square::B2][Square::B3], Bitboard::EMPTY);
 
-        assert_eq!(
-            BETWEEN_EXCLUSIVE[Square::B2][Square::A4], Bitboard::EMPTY
-        );
+        assert_eq!(BETWEEN_EXCLUSIVE[Square::B2][Square::A4], Bitboard::EMPTY);
 
         assert_eq!(
             BETWEEN_EXCLUSIVE[Square::A2][Square::A4],

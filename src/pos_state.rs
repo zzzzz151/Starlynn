@@ -123,21 +123,15 @@ impl PosState {
          self.pieces_bbs[piece_type]
     }
 
-    pub fn color_bb(&self, color: Color) -> Bitboard {
-        self.color_bb[color]
-    }
+    pub fn color_bb(&self, color: Color) -> Bitboard { self.color_bb[color] }
 
     pub fn piece_bb(&self, color: Color, piece_type: PieceType) -> Bitboard {
         self.color_bb(color) & self.piece_type_bb(piece_type)
     }
 
-    pub fn us(&self) -> Bitboard {
-        self.color_bb[self.stm]
-    }
+    pub fn us(&self) -> Bitboard { self.color_bb[self.stm] }
 
-    pub fn them(&self) -> Bitboard {
-        self.color_bb[!self.stm]
-    }
+    pub fn them(&self) -> Bitboard { self.color_bb[!self.stm] }
 
     pub fn occupancy(&self) -> Bitboard {
         self.color_bb[Color::White] | self.color_bb[Color::Black]
@@ -294,12 +288,7 @@ impl PosState {
                 print!(".");
             }
 
-            if file == File::H {
-                print!("\n");
-            }
-            else {
-                print!(" ");
-            }
+            if file == File::H { print!("\n"); } else { print!(" "); }
         }));
 
         println!("{}", self.fen());
@@ -358,11 +347,10 @@ impl PosState {
         attackers
     }
 
-    pub fn is_draw(&self, num_moves: usize, hashes_exclusive: &Vec<u64>) -> bool
+    pub fn is_draw(&self, has_move: bool, hashes_exclusive: &Vec<u64>) -> bool
     {
-        if num_moves == 0 {
-            return !self.in_check();
-        }
+        // Stalemate?
+        if !has_move { return !self.in_check(); }
 
         // 50 moves rule?
         if self.plies_since_pawn_or_capture >= 100 {
@@ -514,9 +502,7 @@ impl PosState {
             return Ok(ChessMove::new(from_sq, to_sq, piece_type));
         }
 
-        if piece_type != PieceType::Pawn {
-            return Err(InvalidUciMove);
-        }
+        if piece_type != PieceType::Pawn { return Err(InvalidUciMove); }
 
         let promotion = PieceType::try_from(&uci_move[4..5]).map_err(|_| InvalidUciMove)?;
 
@@ -524,7 +510,7 @@ impl PosState {
             return Err(InvalidUciMove);
         }
 
-        return Ok(ChessMove::promotion(from_sq, to_sq, promotion));
+        Ok(ChessMove::promotion(from_sq, to_sq, promotion))
     }
 }
 

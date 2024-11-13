@@ -21,9 +21,7 @@ impl PosState {
         }
 
         // If 2 checkers, only king moves are legal
-        if self.checkers().count() > 1 {
-            return moves;
-        }
+        if self.checkers().count() > 1 { return moves; }
 
         let is_castling_legal_move = |queen_side_castle: bool| -> bool
         {
@@ -123,7 +121,7 @@ impl PosState {
             }
         }
 
-        let push_pawn_move = |from: Square, to: Square, movs: &mut ArrayVec<ChessMove, 256>|
+        let add_pawn_move = |from: Square, to: Square, movs: &mut ArrayVec<ChessMove, 256>|
         {
             if to.rank().is_backrank() {
                 movs.push(ChessMove::promotion(from, to, PieceType::Queen));
@@ -152,7 +150,7 @@ impl PosState {
             }
 
             for to_sq in pawn_attacks {
-                push_pawn_move(from_sq, to_sq, &mut moves);
+                add_pawn_move(from_sq, to_sq, &mut moves);
             }
 
             // Pawn's pushes
@@ -189,21 +187,19 @@ impl PosState {
             }
 
             if movable.contains_square(single_push_to_sq) {
-                push_pawn_move(from_sq, single_push_to_sq, &mut moves);
+                add_pawn_move(from_sq, single_push_to_sq, &mut moves);
             }
 
             let start_rank = if self.stm() == Color::White { Rank::Rank2 } else { Rank::Rank7 };
 
-            if from_sq.rank() != start_rank {
-                continue;
-            }
+            if from_sq.rank() != start_rank { continue; }
 
             let double_push_to_sq = push_to_square(true);
 
             if !self.occupancy().contains_square(double_push_to_sq)
             && movable.contains_square(double_push_to_sq)
             {
-                push_pawn_move(from_sq, double_push_to_sq, &mut moves);
+                add_pawn_move(from_sq, double_push_to_sq, &mut moves);
             }
         }
 
@@ -237,7 +233,203 @@ impl PosState {
             }
         }
 
+        debug_assert!((moves.len() > 0) == self.has_move());
         moves
+    }
+
+    pub fn has_move(&mut self) -> bool
+    {
+        let our_king_sq = self.king_square(self.stm());
+        let kingless_occ = self.occupancy() ^ Bitboard::from(our_king_sq);
+        let their_attacks = self.attacks(!self.stm(), kingless_occ);
+
+        if (KING_ATTACKS[our_king_sq] & !self.us() & !their_attacks) != Bitboard::EMPTY {
+            return true;
+        }
+
+        if self.checkers().count() > 1 { return false; }
+
+        let is_castling_legal_move = |queen_side_castle: bool| -> bool
+        {
+            if self.in_check() || !self.has_castling_right(self.stm(), queen_side_castle) {
+                return false;
+            }
+
+            // If queen side castling, check if square next to rook is occupied
+            if queen_side_castle && self.occupancy().contains_square(
+                unsafe { std::mem::transmute(our_king_sq as u8 - 3) }
+            ) {
+                return false;
+            }
+
+            let thru_and_dst_squares = Bitboard::from(match (self.stm(), queen_side_castle)
+            {
+                (Color::White, false) => 96u64,
+                (Color::White, true)  => 12u64,
+                (Color::Black, false) => 6917529027641081856u64,
+                (Color::Black, true)  => 864691128455135232u64
+            });
+
+            (thru_and_dst_squares & (self.occupancy() | their_attacks)) == Bitboard::EMPTY
+        };
+
+        if is_castling_legal_move(false) || is_castling_legal_move(true) {
+            return true;
+        }
+
+        let movable: Bitboard = if self.checkers() == Bitboard::EMPTY {
+            Bitboard::FULL
+        }
+        else {
+            let sliders = self.piece_type_bb(PieceType::Bishop)
+                        | self.piece_type_bb(PieceType::Rook)
+                        | self.piece_type_bb(PieceType::Queen);
+
+            let checker_sq = self.checkers().first_square().unwrap();
+
+            if sliders.contains_square(checker_sq) {
+                self.checkers() | BETWEEN_EXCLUSIVE[our_king_sq][checker_sq]
+            }
+            else {
+                self.checkers()
+            }
+        };
+
+        let mask = movable & !self.us();
+        let (pinned_orthogonal, pinned_diagonal) = self.pinned();
+        let pinned = pinned_orthogonal | pinned_diagonal;
+
+        for from_sq in self.piece_bb(self.stm(), PieceType::Knight) & !pinned {
+            if (KNIGHT_ATTACKS[from_sq] & mask) != Bitboard::EMPTY {
+                return true;
+            }
+        }
+
+        // Sliders
+        for (piece_type, attacks_fn , (pinned1, pinned2)) in [
+            (
+                PieceType::Bishop,
+                bishop_attacks as fn(Square, Bitboard) -> Bitboard,
+                (pinned_orthogonal, pinned_diagonal)
+            ),
+            (
+                PieceType::Rook,
+                rook_attacks as fn(Square, Bitboard) -> Bitboard,
+                (pinned_diagonal, pinned_orthogonal)
+            ),
+            (
+                PieceType::Queen,
+                queen_attacks as fn(Square, Bitboard) -> Bitboard,
+                (Bitboard::EMPTY, pinned)
+            )
+        ] {
+            for from_sq in self.piece_bb(self.stm(), piece_type) & !pinned1
+            {
+                let mut piece_moves = attacks_fn(from_sq, self.occupancy()) & mask;
+
+                if pinned2.contains_square(from_sq) {
+                    piece_moves &= LINE_THRU[our_king_sq][from_sq];
+                }
+
+                if piece_moves != Bitboard::EMPTY { return true; }
+            }
+        }
+
+        for from_sq in self.piece_bb(self.stm(), PieceType::Pawn)
+        {
+            debug_assert!(!from_sq.rank().is_backrank());
+
+            // Pawn's captures
+
+            let mut pawn_attacks = PAWN_ATTACKS[self.stm()][from_sq] & movable & self.them();
+
+            if (pinned_orthogonal | pinned_diagonal).contains_square(from_sq) {
+                pawn_attacks &= LINE_THRU[our_king_sq][from_sq];
+            }
+
+            if pawn_attacks != Bitboard::EMPTY { return true; }
+
+            // Pawn's pushes
+
+            if pinned_diagonal.contains_square(from_sq) {
+                continue;
+            }
+
+            let mut pin_ray = LINE_THRU[our_king_sq][from_sq];
+            pin_ray &= pin_ray << 1;
+
+            let pinned_horizontally =
+                pinned_orthogonal.contains_square(from_sq) && pin_ray != Bitboard::EMPTY;
+
+            if pinned_horizontally { continue; }
+
+            let push_to_square = |is_double_push: bool| -> Square
+            {
+                let to_sq_idx = match (self.stm(), is_double_push)
+                {
+                    (Color::White, false) => from_sq as u8 + 8,
+                    (Color::White, true)  => from_sq as u8 + 16,
+                    (Color::Black, false) => from_sq as u8 - 8,
+                    (Color::Black, true)  => from_sq as u8 - 16,
+                };
+
+                unsafe { std::mem::transmute(to_sq_idx) }
+            };
+
+            let single_push_to_sq = push_to_square(false);
+
+            if self.occupancy().contains_square(single_push_to_sq) {
+                continue;
+            }
+
+            if movable.contains_square(single_push_to_sq) {
+                return true;
+            }
+
+            let start_rank = if self.stm() == Color::White { Rank::Rank2 } else { Rank::Rank7 };
+
+            if from_sq.rank() != start_rank { continue; }
+
+            let double_push_to_sq = push_to_square(true);
+
+            if !self.occupancy().contains_square(double_push_to_sq)
+            && movable.contains_square(double_push_to_sq)
+            {
+                return true;
+            }
+        }
+
+        // En passant's
+        if let Some(en_passant_to_sq) = self.en_passant_square()
+        {
+            let our_nearby_pawns = self.piece_bb(self.stm(), PieceType::Pawn)
+                                 & PAWN_ATTACKS[!self.stm()][en_passant_to_sq];
+
+            let captured_sq: Square = unsafe {
+                std::mem::transmute(en_passant_to_sq as u8 ^ 8)
+            };
+
+            for our_pawn_sq in our_nearby_pawns {
+                // Make en passant move
+                self.toggle_piece(self.stm(), PieceType::Pawn, our_pawn_sq);
+                self.toggle_piece(self.stm(), PieceType::Pawn, en_passant_to_sq);
+                self.toggle_piece(!self.stm(), PieceType::Pawn, captured_sq);
+
+                let checkers = self.attackers(our_king_sq) & self.them();
+                debug_assert!(checkers.count() <= 2);
+
+                let is_en_passant_legal = checkers == Bitboard::EMPTY;
+
+                // Undo en passant move
+                self.toggle_piece(self.stm(), PieceType::Pawn, en_passant_to_sq);
+                self.toggle_piece(self.stm(), PieceType::Pawn, our_pawn_sq);
+                self.toggle_piece(!self.stm(), PieceType::Pawn, captured_sq);
+
+                if is_en_passant_legal { return true; }
+            }
+        }
+
+        false
     }
 
     pub fn pinned(&self) -> (Bitboard, Bitboard)
