@@ -1,3 +1,4 @@
+use std::fmt;
 use crate::types::{Square, Rank, PieceType};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -85,6 +86,21 @@ impl ChessMove {
     }
 }
 
+impl fmt::Display for ChessMove {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+    {
+        if let Some(promotion) = self.promo_piece_type()
+        {
+            let str_promo = promotion.to_string().to_lowercase();
+            write!(f, "{}{}{}", self.from(), self.to(), str_promo)
+        }
+        else {
+            write!(f, "{}{}", self.from(), self.to())
+        }
+
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,38 +114,50 @@ mod tests {
         assert_eq!(mov.piece_type(), PieceType::Knight);
         assert_eq!(mov.promo_piece_type(), None);
         assert!(!mov.is_castling());
+        assert!(mov.to_string() == "b1c3");
 
         // Pawn move
         mov = ChessMove::new(Square::E2, Square::E4, PieceType::Pawn);
         assert_eq!(mov.piece_type(), PieceType::Pawn);
         assert_eq!(mov.promo_piece_type(), None);
         assert!(!mov.is_castling());
+        assert!(mov.to_string() == "e2e4");
     }
 
+    #[test]
     fn test_promotion() {
-        let mov = ChessMove::promotion(Square::A7, Square::A8, PieceType::Queen);
+        let mut mov = ChessMove::promotion(Square::A7, Square::A8, PieceType::Queen);
         assert_eq!(mov.piece_type(), PieceType::Pawn);
         assert_eq!(mov.promo_piece_type(), Some(PieceType::Queen));
         assert!(!mov.is_castling());
+        assert!(mov.to_string() == "a7a8q");
+
+        mov = ChessMove::promotion(Square::A7, Square::A8, PieceType::Knight);
+        assert_eq!(mov.promo_piece_type(), Some(PieceType::Knight));
+        assert!(mov.to_string() == "a7a8n");
     }
 
+    #[test]
     fn test_castling() {
         // Non-castling king move
         let mut mov = ChessMove::new(Square::E1, Square::F1, PieceType::King);
         assert_eq!(mov.piece_type(), PieceType::King);
         assert_eq!(mov.promo_piece_type(), None);
         assert!(!mov.is_castling());
+        assert!(mov.to_string() == "e1f1");
 
         // King side Castling
         mov = ChessMove::new(Square::E1, Square::G1, PieceType::King);
         assert_eq!(mov.piece_type(), PieceType::King);
         assert_eq!(mov.promo_piece_type(), None);
         assert!(mov.is_castling());
+        assert!(mov.to_string() == "e1g1");
 
         // Queen side Castling
         mov = ChessMove::new(Square::E8, Square::C8, PieceType::King);
         assert_eq!(mov.piece_type(), PieceType::King);
         assert_eq!(mov.promo_piece_type(), None);
         assert!(mov.is_castling());
+        assert!(mov.to_string() == "e8c8");
     }
 }

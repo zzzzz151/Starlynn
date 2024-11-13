@@ -67,7 +67,7 @@ impl TryFrom<&str> for Color
 
     fn try_from(s: &str) -> Result<Self, Self::Error>
     {
-        match s {
+        match s.to_lowercase().as_str() {
             "w" => Ok(Color::White),
             "b" => Ok(Color::Black),
             _ => Err(()),
@@ -142,8 +142,8 @@ impl TryFrom<&str> for Square {
         }
 
         let mut chars = s.chars();
-        let file_char = chars.next().unwrap() as u8;
-        let rank_char = chars.next().unwrap() as u8;
+        let file_char = chars.next().unwrap().to_ascii_lowercase() as u8;
+        let rank_char = chars.next().unwrap().to_ascii_lowercase() as u8;
 
         if file_char < ('a' as u8) || file_char > ('h' as u8)
         || rank_char < ('1' as u8) || rank_char > ('8' as u8)
