@@ -1,7 +1,9 @@
+EXE = starlynn
+
 ifeq ($(OS),Windows_NT)
-	NAME := Starlynn.exe
+	NAME := $(EXE).exe
 else
-	NAME := starlynn
+	NAME := $(EXE)
 endif
 
 all:
