@@ -217,4 +217,3 @@ fn uci_go(tokens: &Vec<&str>, pos: &mut Position, tree: &mut Tree)
         println!("bestmove 0000");
     }
 }
-
