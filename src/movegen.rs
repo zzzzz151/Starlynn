@@ -506,11 +506,11 @@ impl PosState {
             pos.make_move(mov);
 
             let leaves = pos.perft(depth - 1);
-            println!("{}: {}", mov, leaves);
+            println!("{mov}: {leaves}");
             total_leaves += leaves;
         }
 
-        println!("Total: {}", total_leaves);
+        println!("Total: {total_leaves}");
         total_leaves
     }
 }

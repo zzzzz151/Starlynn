@@ -80,11 +80,11 @@ impl Position {
 
     pub fn attackers(&self, square: Square) -> Bitboard { self.state.attackers(square) }
 
-    pub fn is_draw(&mut self) -> bool
+    pub fn game_state(&mut self) -> GameState
     {
         let has_move = self.state.has_move();
         debug_assert!(has_move == (self.state.moves(true).len() > 0));
-        self.state.is_draw(has_move, &self.hashes_exclusive)
+        self.state.game_state(has_move, &self.hashes_exclusive)
     }
 
     pub fn make_move(&mut self, mov: ChessMove)
@@ -105,6 +105,8 @@ impl Position {
         self.state.moves(underpromos)
     }
 
+    pub fn has_move(&mut self) -> bool { self.state.has_move() }
+
     pub fn pinned(&self) -> (Bitboard, Bitboard) { self.state.pinned() }
 
     pub fn perft(&mut self, depth: u8) -> u64 { self.state.perft(depth) }
@@ -117,51 +119,75 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_draw() {
+    fn test_game_state() {
+        // Stalemate
+        assert_eq!(
+            Position::try_from("8/8/8/8/8/6Q1/8/5K1k b - - 0 1").unwrap().game_state(),
+            GameState::Draw
+        );
+
+        // Checkmate (overrides 50 moves rule)
+        assert_eq!(
+            Position::try_from("5q2/5b2/8/8/6N1/5B2/8/5K1k b - - 100 1").unwrap().game_state(),
+            GameState::Lost
+        );
+
+        // 50 moves rule
+        assert_eq!(
+            Position::try_from("4kb2/4pp2/8/8/8/3PP3/8/2R1K3 w - - 100 1").unwrap().game_state(),
+            GameState::Draw
+        );
+
         // KvK
-        assert!(Position::try_from("4k3/8/8/8/8/8/8/4K3 w - - 0 1").unwrap().is_draw());
+        assert_eq!(
+            Position::try_from("4k3/8/8/8/8/8/8/4K3 w - - 0 1").unwrap().game_state(),
+            GameState::Draw
+        );
+
+        // KvN
+        assert_eq!(
+            Position::try_from("4k3/8/8/8/8/8/8/4K1N1 w - - 0 1").unwrap().game_state(),
+            GameState::Draw
+        );
 
         // KvR
-        assert!(!Position::try_from("4k3/8/8/8/8/8/8/3RK3 w - - 0 1").unwrap().is_draw());
-
-        // KvR, 50 moves rule
-        assert!(Position::try_from("4k3/8/8/8/8/8/8/3RK3 w - - 100 1").unwrap().is_draw());
-
-        // Checkmate, 50 moves rule
-        assert!(!Position::try_from("8/8/8/8/8/8/5KQ1/7k b - - 100 1").unwrap().is_draw());
+        assert_eq!(
+            Position::try_from("4k3/8/8/8/8/8/8/3RK3 w - - 0 1").unwrap().game_state(),
+            GameState::Ongoing
+        );
 
         // Repetition
 
         let mut pos = Position::try_from(START_FEN).unwrap();
-        assert!(!pos.is_draw());
+        assert_eq!(pos.game_state(), GameState::Ongoing);
 
         pos.make_move(ChessMove::new(Square::B1, Square::C3, PieceType::Knight));
-        assert!(!pos.is_draw());
+        assert_eq!(pos.game_state(), GameState::Ongoing);
 
         pos.make_move(ChessMove::new(Square::B8, Square::C6, PieceType::Knight));
-        assert!(!pos.is_draw());
+        assert_eq!(pos.game_state(), GameState::Ongoing);
 
         pos.make_move(ChessMove::new(Square::C3, Square::B1, PieceType::Knight));
-        assert!(!pos.is_draw());
+        assert_eq!(pos.game_state(), GameState::Ongoing);
 
         let pos_before_repetition = pos.clone();
 
         pos.make_move(ChessMove::new(Square::C6, Square::B8, PieceType::Knight));
-        assert!(pos.is_draw());
+        assert_eq!(pos.game_state(), GameState::Draw);
 
         let pos_at_repetition = pos.clone();
 
         pos.make_move(ChessMove::new(Square::E2, Square::E4, PieceType::Pawn));
-        assert!(!pos.is_draw());
+        assert_eq!(pos.game_state(), GameState::Ongoing);
 
         pos = pos_at_repetition.clone();
 
         pos.make_move(ChessMove::new(Square::B1, Square::C3, PieceType::Knight));
-        assert!(pos.is_draw());
+        assert_eq!(pos.game_state(), GameState::Draw);
 
         pos = pos_before_repetition.clone();
 
         pos.make_move(ChessMove::new(Square::E7, Square::E5, PieceType::Pawn));
-        assert!(!pos.is_draw());
+        assert_eq!(pos.game_state(), GameState::Ongoing);
     }
 }
