@@ -28,7 +28,11 @@ impl Node {
     pub fn uct(&self, parent_visits: u32) -> f32
     {
         debug_assert!(parent_visits > 0);
-        debug_assert!(self.visits <= parent_visits);
+
+        debug_assert!(self.visits < parent_visits, "{}", {
+            let visits = self.visits;
+            format!("{} <= {}", visits, parent_visits)
+        });
 
         if self.visits == 0 { return f32::MAX; }
 

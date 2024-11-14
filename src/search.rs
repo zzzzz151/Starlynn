@@ -19,7 +19,7 @@ impl Tree {
         let node_bytes = std::mem::size_of::<Node>();
 
         let nodes = bytes / node_bytes;
-        assert!(nodes as i32 <= i32::MAX, "{nodes}");
+        assert!(nodes > 1 && nodes as i32 <= i32::MAX, "{nodes}");
 
         println!("info string Tree size {mib} MiB ({nodes} nodes)");
 
@@ -32,11 +32,11 @@ impl Tree {
         search_duration: &Duration,
         max_depth: u8,
         max_nodes: u64,
-        print_info: bool) -> Option<ChessMove>
+        print_info: bool) -> (Option<ChessMove>, u64)
     {
         self.tree.clear(); // doesn't change vector capacity
 
-        if !root_pos.has_move() { return None; }
+        if !root_pos.has_move() { return (None, 0); }
 
         // Root node
         self.tree.push(Node {
@@ -55,26 +55,11 @@ impl Tree {
 
         let mut path: Vec<usize> = Vec::with_capacity(256);
 
+        self.make_iteration(root_pos, &mut path);
+
         while self.tree.len() < self.tree.capacity()
         {
-            let mut pos = root_pos.clone();
-
-            path.clear();
-            path.push(0); // root node idx
-
-            let mut node_idx = self.select(0, &mut pos, &mut path);
-
-            if self[node_idx].game_state == GameState::Unknown {
-                self[node_idx].game_state = pos.game_state();
-            }
-
-            if self[node_idx].game_state == GameState::Ongoing && self[node_idx].visits > 0 {
-                node_idx = self.expand(node_idx, &mut pos, &mut path);
-            }
-
-            let wdl = self.simulate(node_idx, &mut pos);
-
-            self.backprop(wdl, &path);
+            self.make_iteration(root_pos, &mut path);
 
             nodes += 1;
 
@@ -108,7 +93,30 @@ impl Tree {
             self.uci_info(avg_depth.round() as u64, max_depth_reached, nodes, start_time);
         }
 
-        Some(self[self.most_visits_root_child()].mov.into())
+        let best_root_child: &Node = &self[self.most_visits_root_child()];
+        (Some(best_root_child.mov.into()), nodes)
+    }
+
+    fn make_iteration(&mut self, root_pos: &mut Position, path: &mut Vec<usize>)
+    {
+        path.clear();
+        path.push(0); // root node idx
+
+        let mut pos = root_pos.clone();
+
+        let mut node_idx = self.select(0, &mut pos, path);
+
+        if self[node_idx].game_state == GameState::Unknown {
+            self[node_idx].game_state = pos.game_state();
+        }
+
+        if self[node_idx].game_state == GameState::Ongoing && self[node_idx].visits > 0 {
+            node_idx = self.expand(node_idx, &mut pos, path);
+        }
+
+        let wdl = self.simulate(node_idx, &mut pos);
+
+        self.backprop(wdl, &path);
     }
 
     fn select(&mut self, node_idx: usize, pos: &mut Position, path: &mut Vec<usize>) -> usize
@@ -155,9 +163,7 @@ impl Tree {
 
     fn expand(&mut self, node_idx: usize, pos: &mut Position, path: &mut Vec<usize>) -> usize
     {
-        debug_assert!(self[node_idx].game_state == GameState::Ongoing);
         debug_assert!(pos.has_move());
-        debug_assert!(self[node_idx].visits > 0);
 
         if self[node_idx].visits == 1
         {
@@ -172,7 +178,7 @@ impl Tree {
                 let i = i as i32;
 
                 self.tree.push(Node {
-                    right_sibling_idx: node_idx as i32 + i + 2,
+                    right_sibling_idx: self[node_idx].first_child_idx + i + 1,
                     first_child_idx: -1,
                     game_state: GameState::Unknown,
                     visits: 0,
@@ -247,6 +253,9 @@ impl Tree {
         str += &format!(" nodes {nodes} nps {nps} time {elapsed_ms}");
         str += &format!(" pv {}", mov);
 
+        str += &format!("\ninfo string Nodes allocated {}/{}",
+            self.tree.len(), self.tree.capacity());
+
         println!("{}", str);
     }
 
@@ -265,25 +274,30 @@ impl Tree {
 
         best_child_idx as usize
     }
-}
 
-impl fmt::Display for Tree
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+    fn print_tree(&self, f: &mut fmt::Formatter<'_>, node_idx: usize, depth: usize) -> fmt::Result
     {
-        let mut str = format!("Nodes: {}", self.tree.len());
+        if node_idx >= self.tree.len() { return Ok(()); }
 
-        if self.tree.len() == 0 { return write!(f, "{str}"); }
+        let node = &self.tree[node_idx];
+        let mut child_idx = node.first_child_idx;
 
-        str += &format!("\n{}", &self[0 as usize]);
-        let mut child_idx = self[0 as usize].first_child_idx;
+        writeln!(f, "{}{}: {}", "  ".repeat(depth), node_idx, node)?;
 
         while child_idx != -1 {
-            str += &format!("\n{}", &self[child_idx]);
-            child_idx = self[child_idx].right_sibling_idx;
+            self.print_tree(f, child_idx as usize, depth + 1)?;
+            child_idx = self.tree[child_idx as usize].right_sibling_idx;
         }
 
-        write!(f, "{str}")
+        Ok(())
+    }
+}
+
+impl fmt::Display for Tree {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+    {
+        println!("Allocated nodes {}/{}", self.tree.len(), self.tree.capacity());
+        self.print_tree(f, 0, 0)
     }
 }
 

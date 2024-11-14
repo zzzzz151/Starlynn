@@ -12,10 +12,12 @@ mod position;
 mod eval;
 mod node;
 mod search;
+mod bench;
 
 use crate::pos_state::START_FEN;
 use crate::position::Position;
 use crate::search::Tree;
+use crate::bench::bench;
 
 fn main() {
     println!("Starlynn by zzzzz");
@@ -85,8 +87,11 @@ fn run_command(command: &str, pos: &mut Position, tree: &mut Tree)
             {
                 let start_time = Instant::now();
                 let leaves = pos.perft(depth);
-                let nps = leaves as f64 / start_time.elapsed().as_secs_f64().max(0.001);
-                println!("{} nodes {} nps", leaves, nps.round());
+
+                let nps = leaves * 1000
+                        / (start_time.elapsed().as_micros().max(1) as u64);
+
+                println!("{} nodes {} nps", leaves, nps);
             }
             else {
                 println!("Invalid perft command, expected \"perft <depth>\"");
@@ -102,10 +107,15 @@ fn run_command(command: &str, pos: &mut Position, tree: &mut Tree)
                 println!("Invalid {0} command, expected {0} <depth>", tokens[0]);
             }
         },
-        "bench" => println!("1 nodes 1200000 nps"),
         "tree" => {
             println!("{}", tree);
         }
+        "bench" => {
+            let depth = tokens.get(1)
+                .and_then(|token| token.parse::<i64>().ok()).unwrap_or(4);
+
+            bench(depth.max(1) as u8);
+        },
         _ => { }
     }
 }
@@ -182,27 +192,29 @@ fn uci_go(tokens: &Vec<&str>, pos: &mut Position, tree: &mut Tree)
                 milliseconds = value;
             },
             "depth" => depth = value.clamp(0, u8::MAX as u64) as u8,
-            "nodes" => nodes = value,
+            "nodes" => nodes = value.max(1),
             _ => {},
         }
     }
 
-    let minus_overhead = (milliseconds as i64 - 20).max(0) as u64;
+    if milliseconds != u64::MAX {
+        milliseconds = (milliseconds as i64 - 20).max(0) as u64;
 
-    milliseconds = if is_move_time {
-        minus_overhead
+        if !is_move_time {
+            let f64_ms = milliseconds as f64 / (moves_to_go as f64);
+            milliseconds = f64_ms.round() as u64;
+        }
     }
-    else {
-        let f64_ms = minus_overhead as f64 / (moves_to_go as f64);
-        f64_ms.round() as u64
-    };
+
+    println!("info string Starting {milliseconds} milliseconds search");
 
     if let Some(mov) = tree.search(
         pos, &start_time, &Duration::from_millis(milliseconds), depth, nodes, true
-    ) {
+    ).0 {
         println!("bestmove {mov}");
     }
     else {
         println!("bestmove 0000");
     }
 }
+
