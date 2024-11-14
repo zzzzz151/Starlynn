@@ -1,6 +1,5 @@
-use std::env;
 use std::io::{self};
-use std::time::Instant;
+use std::time::{Instant, Duration};
 
 mod types;
 mod bitboard;
@@ -10,16 +9,22 @@ mod attacks;
 mod pos_state;
 mod movegen;
 mod position;
+mod eval;
+mod node;
+mod search;
 
 use crate::pos_state::START_FEN;
 use crate::position::Position;
+use crate::search::Tree;
 
 fn main() {
     println!("Starlynn by zzzzz");
 
-    let args: Vec<String> = env::args().collect();
+    let args: Vec<String> = std::env::args().collect();
     let mut pos = Position::try_from(START_FEN).unwrap();
+    let mut tree = Tree::new(32);
 
+    // If a command was passed in program args, run it and exit
     if args.len() > 1 {
         let command = args[1..]
             .iter()
@@ -27,7 +32,7 @@ fn main() {
             .collect::<Vec<&str>>()
             .join(" ");
 
-        parse_command(command.as_str(), &mut pos);
+        run_command(command.as_str(), &mut pos, &mut tree);
         return;
     }
 
@@ -38,14 +43,16 @@ fn main() {
 
         if command.trim() == "quit" { break; }
 
-        parse_command(command.as_str(), &mut pos);
+        run_command(command.as_str(), &mut pos, &mut tree);
     }
 }
 
-fn parse_command(command: &str, pos: &mut Position)
+fn run_command(command: &str, pos: &mut Position, tree: &mut Tree)
 {
     let command = command.trim();
-    let tokens: Vec<&str> = command.split_whitespace().map(|token| token.trim()).collect();
+
+    let tokens: Vec<&str> = command
+        .split_whitespace().map(|token| token.trim()).collect();
 
     if tokens.len() == 0 { return; }
 
@@ -54,17 +61,13 @@ fn parse_command(command: &str, pos: &mut Position)
         "uci" => {
             print!("id name Starlynn\n");
             print!("id author zzzzz\n");
-            print!("option name Hash type spin default 32 min 1 max 65536\n");
+            print!("option name Hash type spin default 32 min 1 max 32768\n");
             print!("option name Threads type spin default 1 min 1 max 256\n");
             println!("uciok");
         },
-        "setoption" => { },
-        "ucinewgame" => {
-            *pos = Position::try_from(START_FEN).unwrap();
-        },
-        "isready" => {
-            println!("readyok");
-        },
+        "setoption" => uci_setoption(&tokens, tree),
+        "ucinewgame" => *pos = Position::try_from(START_FEN).unwrap(),
+        "isready" => println!("readyok"),
         "position" => {
             if let Ok(new_pos) = uci_position(&tokens) {
                 *pos = new_pos;
@@ -73,15 +76,12 @@ fn parse_command(command: &str, pos: &mut Position)
                 println!("info string Invalid position command");
             }
         },
-        "go" => {
-            uci_go(&tokens, pos);
-        },
+        "go" => uci_go(&tokens, pos, tree),
         // Non-UCI commands
-        "d" | "display" | "print" | "show" => {
-            pos.display();
-        },
+        "d" | "display" | "print" | "show" => pos.display(),
         "perft" => {
-            if let Some(depth) = tokens.get(1).and_then(|str_depth| str_depth.parse::<u8>().ok())
+            if let Some(depth) = tokens.get(1)
+                .and_then(|str_depth| str_depth.parse::<u8>().ok())
             {
                 let start_time = Instant::now();
                 let leaves = pos.perft(depth);
@@ -94,16 +94,33 @@ fn parse_command(command: &str, pos: &mut Position)
         },
         "perftsplit" | "splitperft" | "perftdivide" | "divideperft" =>
         {
-            if let Some(depth) = tokens.get(1).and_then(|str_depth| str_depth.parse::<u8>().ok()) {
+            if let Some(depth) = tokens.get(1)
+                .and_then(|str_depth| str_depth.parse::<u8>().ok())
+            {
                 pos.perft_split(depth);
             } else {
                 println!("Invalid {0} command, expected {0} <depth>", tokens[0]);
             }
         },
-        "bench" => {
-            println!("1 nodes 1200000 nps");
+        "bench" => println!("1 nodes 1200000 nps"),
+        "tree" => {
+            println!("{}", tree);
         }
         _ => { }
+    }
+}
+
+fn uci_setoption(tokens: &Vec<&str>, tree: &mut Tree)
+{
+    if let (Some(name), Some(str_value)) = (tokens.get(2), tokens.get(4))
+    {
+        if name.to_lowercase() == "hash" {
+            let mib = str_value.parse::<i64>().unwrap_or_else(|_| 1);
+            *tree = Tree::new(mib.clamp(1, 32768) as usize);
+        }
+    }
+    else {
+        println!("info string Invalid setoption command");
     }
 }
 
@@ -136,32 +153,56 @@ fn uci_position(tokens: &Vec<&str>) -> Result<Position, InvalidUciPosition>
     Ok(pos)
 }
 
-fn uci_go(tokens: &Vec<&str>, pos: &mut Position)
+fn uci_go(tokens: &Vec<&str>, pos: &mut Position, tree: &mut Tree)
 {
-    let mut _milliseconds = u64::MAX;
+    let start_time = Instant::now();
+    let mut milliseconds = u64::MAX;
+    let mut moves_to_go = 20;
+    let mut is_move_time = false;
 
-    if let Some(time_token_idx) = tokens.iter().position(
-        |&token| token == pos.stm().to_string() + "time"
-    ) {
-        if let Some(str_milliseconds) = tokens.get(time_token_idx + 1) {
-            if let Ok(i64_ms) = str_milliseconds.parse::<i64>() {
-                _milliseconds = i64_ms.max(0) as u64;
-            }
+    let mut depth = u8::MAX;
+    let mut nodes = u64::MAX;
+
+    let stm_time_token = pos.stm().to_string() + "time";
+
+    for pair in tokens.iter().skip(1).collect::<Vec<_>>().chunks(2)
+    {
+        if pair.len() == 1 { break; }
+
+        let token = *(pair[0]);
+
+        let value = pair[1].parse::<i64>()
+            .expect("Invalid go command").max(0) as u64;
+
+        match token {
+            _ if token == stm_time_token => milliseconds = value,
+            "movestogo" => moves_to_go = value.max(1),
+            "movetime" => {
+                is_move_time = true;
+                milliseconds = value;
+            },
+            "depth" => depth = value.clamp(0, u8::MAX as u64) as u8,
+            "nodes" => nodes = value,
+            _ => {},
         }
     }
 
-    _milliseconds = {
-        let temp: f64 = (_milliseconds as f64 - 20.0).max(0.0) / 20.0;
-        temp.round() as u64
-    };
+    let minus_overhead = (milliseconds as i64 - 20).max(0) as u64;
 
-    let moves = pos.moves(true);
-
-    if moves.len() == 0 {
-        println!("bestmove 0000");
+    milliseconds = if is_move_time {
+        minus_overhead
     }
     else {
-        let mov = moves[pos.zobrist_hash() as usize % moves.len()];
-        println!("bestmove {}", mov);
+        let f64_ms = minus_overhead as f64 / (moves_to_go as f64);
+        f64_ms.round() as u64
+    };
+
+    if let Some(mov) = tree.search(
+        pos, &start_time, &Duration::from_millis(milliseconds), depth, nodes, true
+    ) {
+        println!("bestmove {mov}");
+    }
+    else {
+        println!("bestmove 0000");
     }
 }

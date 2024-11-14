@@ -293,7 +293,7 @@ mod tests {
         let sq_flipped = sq.file_flipped().rank_flipped();
         assert_eq!(sq_flipped, Square::from_file_rank(File::G, Rank::Rank4));
 
-        assert_eq!(format!("{}", sq), "b5");
+        assert_eq!(format!("{sq}"), "b5");
         assert_eq!(sq_flipped.to_string(), "g4");
 
         assert_eq!(Square::try_from("b5").unwrap(), sq);

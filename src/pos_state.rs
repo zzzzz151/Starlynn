@@ -1,3 +1,4 @@
+use std::fmt;
 use strum::IntoEnumIterator;
 use crate::types::{Color, Square, Rank, File, PieceType};
 use crate::bitboard::Bitboard;
@@ -6,6 +7,27 @@ use crate::chess_move::ChessMove;
 use crate::attacks::*;
 
 pub const START_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum GameState {
+    Unknown, Ongoing, Draw, Lost
+}
+
+impl fmt::Display for GameState
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+    {
+        let str = match self {
+            GameState::Unknown => "Unknown",
+            GameState::Ongoing => "Ongoing",
+            GameState::Draw => "Draw",
+            GameState::Lost => "Lost"
+        };
+
+        write!(f, "{str}")
+    }
+}
 
 #[derive(Copy, Clone, Debug)]
 pub struct PosState {
@@ -347,20 +369,27 @@ impl PosState {
         attackers
     }
 
-    pub fn is_draw(&self, has_move: bool, hashes_exclusive: &Vec<u64>) -> bool
+    pub fn game_state(&self, has_move: bool, hashes_exclusive: &Vec<u64>) -> GameState
     {
-        // Stalemate?
-        if !has_move { return !self.in_check(); }
+        if !has_move {
+            if self.in_check() {
+                // Checkmate
+                return GameState::Lost;
+            } else {
+                // Stalemate
+                return GameState::Draw;
+            }
+        }
 
         // 50 moves rule?
         if self.plies_since_pawn_or_capture >= 100 {
-            return true;
+            return GameState::Draw;
         }
 
         // Only kings?
         if self.occupancy().count() == 2 {
             debug_assert!(self.occupancy() == self.pieces_bbs[PieceType::King]);
-            return true;
+            return GameState::Draw;
         }
 
         // KvN or KvB ?
@@ -369,16 +398,17 @@ impl PosState {
                             | self.pieces_bbs[PieceType::Bishop];
 
         if self.occupancy().count() == 3 && knights_bishops.count() == 1 {
-            return true;
+            return GameState::Draw;
         }
 
         // Repetition?
-        hashes_exclusive
-            .iter()
-            .rev()
-            .skip(1)
-            .step_by(2)
+        if hashes_exclusive.iter().rev().skip(1).step_by(2)
             .any(|&hash| hash == self.zobrist_hash)
+        {
+            return GameState::Draw;
+        }
+
+        GameState::Ongoing
     }
 
     pub fn make_move(&mut self, mov: ChessMove)

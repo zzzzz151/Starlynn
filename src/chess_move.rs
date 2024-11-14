@@ -89,6 +89,10 @@ impl ChessMove {
 impl fmt::Display for ChessMove {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
     {
+        if self.mov == 0 {
+            return write!(f, "0000");
+        }
+
         if let Some(promotion) = self.promo_piece_type()
         {
             let str_promo = promotion.to_string().to_lowercase();
@@ -98,6 +102,18 @@ impl fmt::Display for ChessMove {
             write!(f, "{}{}", self.from(), self.to())
         }
 
+    }
+}
+
+impl From<u16> for ChessMove {
+    fn from(mov: u16) -> Self {
+        Self { mov: mov }
+    }
+}
+
+impl From<ChessMove> for u16 {
+    fn from(mov: ChessMove) -> Self {
+        mov.mov
     }
 }
 
