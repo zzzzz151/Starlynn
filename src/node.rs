@@ -8,37 +8,35 @@ pub struct Node {
     pub right_sibling_idx: i32,
     pub first_child_idx: i32,
     pub game_state: GameState,
+    pub num_moves: u8,
     pub visits: u32,
     pub total_score: f32,
     pub mov: u16
 }
 
-const _: () = assert!(std::mem::size_of::<Node>() == 4 + 4 + 1 + 4 + 4 + 2);
+const _: () = assert!(std::mem::size_of::<Node>() == 4 + 4 + 1 + 1 + 4 + 4 + 2);
 
 impl Node {
-    pub fn score<T: num_traits::Float>(&self) -> T
+    pub const fn q(&self) -> f32
     {
-        if self.visits == 0 { return T::from(1.0).unwrap(); }
-
-        debug_assert!(T::from(self.total_score).unwrap() <= T::from(self.visits).unwrap());
-
-        T::from(self.total_score).unwrap() / T::from(self.visits).unwrap()
+        debug_assert!(self.visits > 0);
+        self.total_score / (self.visits as f32)
     }
 
-    pub fn uct(&self, parent_visits: u32) -> f32
+    pub fn puct(&self, child: &Node) -> f32
     {
-        debug_assert!(parent_visits > 0);
+        debug_assert!(self.visits > 0);
+        debug_assert!(self.visits > child.visits);
+        debug_assert!(self.num_moves > 0);
 
-        debug_assert!(self.visits < parent_visits, "{}", {
-            let visits = self.visits;
-            format!("{} <= {}", visits, parent_visits)
-        });
+        if child.visits == 0 { return f32::MAX; }
 
-        if self.visits == 0 { return f32::MAX; }
+        let policy = 1.0 / (self.num_moves as f32);
 
-        let visits_ratio = (parent_visits as f32).ln() / (self.visits as f32);
+        let mut u = 1.75 * policy * (self.visits as f32 - 1.0).sqrt();
+        u /= child.visits as f32 + 1.0;
 
-        self.score::<f32>() + 1.75 * visits_ratio.sqrt()
+        child.q() + u
     }
 }
 
@@ -49,15 +47,18 @@ impl fmt::Display for Node
         let right_sibling_idx = self.right_sibling_idx;
         let first_child_idx = self.first_child_idx;
         let game_state = self.game_state;
+        let num_moves = self.num_moves;
         let visits = self.visits;
-        let total_score = self.total_score;
         let mov: ChessMove = self.mov.into();
 
-        let mut str = format!("(right sibling {}, first child {}, game state {}",
-            right_sibling_idx, first_child_idx, game_state);
+        let mut str = format!("(right sibling {}, first child {}",
+            right_sibling_idx, first_child_idx);
 
-        str += &format!(", visits {}, total score {:.2}, score {:.2}, move {})",
-            visits, total_score, self.score::<f64>(), mov);
+        str += &format!(", game state {}, moves {}",
+            game_state, num_moves);
+
+        str += &format!(", visits {}, Q {:.2}, move {})",
+            visits, if self.visits == 0 { 0.0 } else { self.q() }, mov);
 
         write!(f, "{str}")
     }

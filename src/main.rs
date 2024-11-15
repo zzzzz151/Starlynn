@@ -89,7 +89,7 @@ fn run_command(command: &str, pos: &mut Position, tree: &mut Tree)
                 let leaves = pos.perft(depth);
 
                 let nps = leaves * 1000
-                        / (start_time.elapsed().as_micros().max(1) as u64);
+                        / (start_time.elapsed().as_millis().max(1) as u64);
 
                 println!("{} nodes {} nps", leaves, nps);
             }
@@ -112,7 +112,7 @@ fn run_command(command: &str, pos: &mut Position, tree: &mut Tree)
         }
         "bench" => {
             let depth = tokens.get(1)
-                .and_then(|token| token.parse::<i64>().ok()).unwrap_or(4);
+                .and_then(|token| token.parse::<i64>().ok()).unwrap_or(5);
 
             bench(depth.max(1) as u8);
         },
@@ -205,8 +205,6 @@ fn uci_go(tokens: &Vec<&str>, pos: &mut Position, tree: &mut Tree)
             milliseconds = f64_ms.round() as u64;
         }
     }
-
-    println!("info string Starting {milliseconds} milliseconds search");
 
     if let Some(mov) = tree.search(
         pos, &start_time, &Duration::from_millis(milliseconds), depth, nodes, true
