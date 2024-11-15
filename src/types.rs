@@ -40,6 +40,12 @@ pub enum PieceType {
     Pawn, Knight, Bishop, Rook, Queen, King
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum GameState {
+    Unknown, Ongoing, Draw, Lost
+}
+
 impl Not for Color
 {
     type Output = Self;
@@ -270,6 +276,27 @@ impl<T> IndexMut<PieceType> for [T; 6]
     fn index_mut(&mut self, pt: PieceType) -> &mut Self::Output
     {
         unsafe { self.get_unchecked_mut(pt as usize) }
+    }
+}
+
+impl GameState {
+    pub fn is_terminal(self) -> bool {
+        self == GameState::Draw || self == GameState::Lost
+    }
+}
+
+impl fmt::Display for GameState
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+    {
+        let str = match self {
+            GameState::Unknown => "Unknown",
+            GameState::Ongoing => "Ongoing",
+            GameState::Draw => "Draw",
+            GameState::Lost => "Lost"
+        };
+
+        write!(f, "{str}")
     }
 }
 

@@ -1,33 +1,11 @@
-use std::fmt;
 use strum::IntoEnumIterator;
-use crate::types::{Color, Square, Rank, File, PieceType};
+use crate::types::{Color, Square, Rank, File, PieceType, GameState};
 use crate::bitboard::Bitboard;
 use crate::utils::{ZOBRIST_COLOR, ZOBRIST_PIECES, ZOBRIST_FILES};
 use crate::chess_move::ChessMove;
 use crate::attacks::*;
 
 pub const START_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[repr(u8)]
-pub enum GameState {
-    Unknown, Ongoing, Draw, Lost
-}
-
-impl fmt::Display for GameState
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
-    {
-        let str = match self {
-            GameState::Unknown => "Unknown",
-            GameState::Ongoing => "Ongoing",
-            GameState::Draw => "Draw",
-            GameState::Lost => "Lost"
-        };
-
-        write!(f, "{str}")
-    }
-}
 
 #[derive(Copy, Clone, Debug)]
 pub struct PosState {

@@ -1,8 +1,8 @@
 use std::ops::{Index, IndexMut};
 use std::time::{Instant, Duration};
 use std::fmt;
+use crate::types::GameState;
 use crate::chess_move::ChessMove;
-use crate::pos_state::GameState;
 use crate::position::Position;
 use crate::node::Node;
 
@@ -40,13 +40,12 @@ impl Tree {
 
         // Root node
         self.tree.push(Node {
-            right_sibling_idx: -1,
             first_child_idx: -1,
-            game_state: GameState::Ongoing,
             num_moves: u8::MAX,
+            game_state: GameState::Ongoing,
+            mov: 0,
             visits: 0,
-            total_score: 0.0,
-            mov: 0
+            total_score: 0.0
         });
 
         let mut nodes: u64 = 0;
@@ -110,11 +109,11 @@ impl Tree {
 
         let mut node_idx = self.select(0, &mut pos, path);
 
-        if self[node_idx].game_state == GameState::Unknown {
-            self[node_idx].game_state = pos.game_state();
-        }
+        debug_assert!((self[node_idx].num_moves > 0) == (self[node_idx].game_state == GameState::Ongoing));
+        debug_assert!(self[node_idx].game_state != GameState::Unknown);
+        debug_assert!(self[node_idx].visits > 0);
 
-        if self[node_idx].game_state == GameState::Ongoing && self[node_idx].visits > 0 {
+        if self[node_idx].game_state == GameState::Ongoing {
             node_idx = self.expand_to(node_idx, &mut pos, path);
         }
 
@@ -128,113 +127,131 @@ impl Tree {
         let node: &Node = &self[node_idx];
 
         debug_assert!(node.game_state != GameState::Unknown);
+        debug_assert!(node.game_state == GameState::Ongoing || node.num_moves == 0);
+        debug_assert!(node.visits > 0);
 
         // Terminal or leaf?
         if node.game_state != GameState::Ongoing || node.first_child_idx == -1 {
             return node_idx;
         }
 
-        let mut best_child_idx = node.first_child_idx as usize;
+        let mut best_child_idx: i32 = -1;
         let mut best_puct = f32::MIN;
 
-        let mut child_idx: i32 = node.first_child_idx;
+        for child_idx in node.iter() {
+            if self[child_idx].visits == 0 { return node_idx; }
 
-        while child_idx != -1 {
-            let child: &Node = &self[child_idx];
-
-            if child.visits == 0 { return node_idx; }
-
-            let puct = node.puct(child);
+            let puct = node.puct(&self[child_idx]);
 
             if puct > best_puct {
-                best_child_idx = child_idx as usize;
+                best_child_idx = child_idx as i32;
                 best_puct = puct;
             }
-
-            child_idx = child.right_sibling_idx;
         }
 
-        pos.make_move(self[best_child_idx].mov.into());
-        path.push(best_child_idx);
+        debug_assert!(best_child_idx != -1);
 
-        self.select(best_child_idx, pos, path)
+        pos.make_move(self[best_child_idx].mov.into());
+        path.push(best_child_idx as usize);
+
+        self.select(best_child_idx as usize, pos, path)
     }
 
     fn expand(&mut self, node_idx: usize, pos: &mut Position)
     {
-        debug_assert!(self[node_idx].num_moves == u8::MAX);
         debug_assert!(self[node_idx].first_child_idx == -1);
+        debug_assert!(self[node_idx].num_moves == u8::MAX);
+        debug_assert!(self[node_idx].game_state == GameState::Ongoing);
         debug_assert!(self[node_idx].visits == 1);
 
         let moves = pos.moves(false);
         debug_assert!(moves.len() > 0);
 
-        self[node_idx].num_moves = moves.len() as u8;
         self[node_idx].first_child_idx = self.tree.len() as i32;
+        self[node_idx].num_moves = moves.len() as u8;
 
-        for (i, mov) in moves.iter().enumerate()
+        for mov in moves.iter()
         {
-            let i = i as i32;
-
             self.tree.push(Node {
-                right_sibling_idx: self[node_idx].first_child_idx + i + 1,
                 first_child_idx: -1,
-                game_state: GameState::Unknown,
                 num_moves: u8::MAX,
+                game_state: GameState::Unknown,
+                mov: u16::from(*mov),
                 visits: 0,
-                total_score: 0.0,
-                mov: u16::from(*mov)
+                total_score: 0.0
             });
         }
 
         debug_assert!(self.tree.len() <= self.tree.capacity());
-
-        self.tree.last_mut().unwrap().right_sibling_idx = -1;
     }
 
     fn expand_to(&mut self, node_idx: usize, pos: &mut Position, path: &mut Vec<usize>) -> usize
     {
-        debug_assert!(pos.has_move());
+        debug_assert!(self[node_idx].game_state == GameState::Ongoing);
+        debug_assert!(self[node_idx].visits > 0);
 
         if node_idx > 0 && self[node_idx].visits == 1 {
             self.expand(node_idx, pos);
         }
 
-        let mut child_idx = self[node_idx].first_child_idx;
+        debug_assert!(self[node_idx].first_child_idx != -1);
+        debug_assert!(self[node_idx].num_moves > 0 && self[node_idx].num_moves != u8::MAX);
 
-        while child_idx != -1 && self[child_idx].visits > 0 {
-            child_idx = self[child_idx].right_sibling_idx;
-        }
+        let no_visits_child_idx = self[node_idx].iter()
+            .find(|&child_idx| self[child_idx].visits == 0)
+            .expect("No unvisited child to expand to");
 
-        debug_assert!(self[child_idx].visits == 0);
+        debug_assert!(self[no_visits_child_idx].first_child_idx == -1);
+        debug_assert!(self[no_visits_child_idx].num_moves == u8::MAX);
+        debug_assert!(self[no_visits_child_idx].game_state == GameState::Unknown);
+        debug_assert!(self[no_visits_child_idx].total_score == 0.0);
 
-        pos.make_move(self[child_idx].mov.into());
-        path.push(child_idx as usize);
+        pos.make_move(self[no_visits_child_idx].mov.into());
+        path.push(no_visits_child_idx as usize);
 
-        child_idx as usize
+        no_visits_child_idx as usize
     }
 
     fn simulate(&mut self, node_idx: usize, pos: &mut Position) -> f32
     {
         let node: &mut Node = &mut self[node_idx];
 
-        if node.game_state == GameState::Unknown {
+        if node.game_state == GameState::Unknown
+        {
+            debug_assert!(node.first_child_idx == -1);
+            debug_assert!(node.num_moves == u8::MAX);
+            debug_assert!(node.game_state == GameState::Unknown);
+            debug_assert!(node.visits == 0);
+            debug_assert!(node.total_score == 0.0);
+
             node.game_state = pos.game_state();
         }
 
         match node.game_state {
-            GameState::Draw => 0.5,
-            GameState::Lost => 0.0,
-            GameState::Ongoing =>
-                1.0 / (1.0 + (-(pos.eval() as f32) / 400.0).exp()),
+            GameState::Draw => {
+                node.num_moves = 0;
+                0.5
+            }
+            GameState::Lost => {
+                node.num_moves = 0;
+                0.0
+            }
+            GameState::Ongoing => {
+                // Sigmoid converts centipawns to wdl
+                let eval_scaled = pos.eval() as f32 / 400.0;
+                let exp = (-eval_scaled).exp();
+                let wdl = 1.0 / (1.0 + exp);
+
+                debug_assert!(wdl >= 0.0 && wdl <= 1.0, "{wdl}");
+                wdl
+
+            }
             _ => panic!("Invalid game state")
         }
     }
 
     fn backprop(&mut self, mut wdl: f32, path: &Vec<usize>)
     {
-        debug_assert!(wdl >= 0.0 && wdl <= 1.0, "{wdl}");
-
         for node_idx in path.iter().rev()
         {
             wdl = 1.0 - wdl;
@@ -245,11 +262,11 @@ impl Tree {
 
     fn uci_info(&self, depth: u64, seldepth: u64, nodes: u64, start_time: &Instant)
     {
-        let elapsed_ms = start_time.elapsed().as_millis();
-        let nps = nodes * 1000 / (elapsed_ms.max(1) as u64);
-
         let highest_q_root_child: &Node = &self[self.highest_q_root_child()];
         let mov: ChessMove = highest_q_root_child.mov.into();
+
+        let elapsed_ms = start_time.elapsed().as_millis();
+        let nps = nodes * 1000 / (elapsed_ms.max(1) as u64);
 
         let mut str = format!("info depth {depth} seldepth {seldepth}");
         str += &format!(" score cp {:.0}", highest_q_root_child.q() * 100.0);
@@ -264,45 +281,42 @@ impl Tree {
 
     fn highest_q_root_child(&self) -> usize
     {
-        let mut best_child_idx = self[0 as usize].first_child_idx;
-        let mut best_q = self[best_child_idx].q();
+        debug_assert!(self[0 as usize].first_child_idx == 1);
+        debug_assert!(self[0 as usize].num_moves > 0 && self[0 as usize].num_moves != u8::MAX);
+        debug_assert!(self[0 as usize].game_state == GameState::Ongoing);
+        debug_assert!(self[0 as usize].visits > 1);
 
-        let mut child_idx = self[best_child_idx].right_sibling_idx;
+        let mut highest_q_root_child_idx: usize = 1;
 
-        while child_idx != -1 && self[child_idx].visits > 0 {
-            let q = self[child_idx].q();
+        for child_idx in self[0 as usize].iter() {
+            if self[child_idx as usize].visits == 0
+            {
+                if cfg!(debug_assertions)
+                {
+                    for child_idx2 in self[0 as usize].iter() {
+                        debug_assert!((self[child_idx2 as usize].visits == 0) == (child_idx2 >= child_idx));
+                    }
+                }
 
-            if q > best_q {
-                best_child_idx = child_idx;
-                best_q = q;
+                break;
             }
 
-            child_idx = self[child_idx].right_sibling_idx;
-        }
-
-        if cfg!(debug_assertions)
-        {
-            while child_idx != -1 {
-                debug_assert!(self[child_idx].visits == 0);
-                child_idx = self[child_idx].right_sibling_idx;
+            if self[child_idx as usize].q() > self[highest_q_root_child_idx].q() {
+                highest_q_root_child_idx = child_idx;
             }
         }
 
-        best_child_idx as usize
+        highest_q_root_child_idx
     }
 
     fn print_tree(&self, f: &mut fmt::Formatter<'_>, node_idx: usize, depth: usize) -> fmt::Result
     {
         if node_idx >= self.tree.len() { return Ok(()); }
 
-        let node = &self.tree[node_idx];
-        let mut child_idx = node.first_child_idx;
+        writeln!(f, "{}{}: {}", "  ".repeat(depth), node_idx, self[node_idx])?;
 
-        writeln!(f, "{}{}: {}", "  ".repeat(depth), node_idx, node)?;
-
-        while child_idx != -1 {
-            self.print_tree(f, child_idx as usize, depth + 1)?;
-            child_idx = self.tree[child_idx as usize].right_sibling_idx;
+        for child_idx in self[node_idx].iter() {
+            self.print_tree(f, child_idx, depth + 1)?;
         }
 
         Ok(())

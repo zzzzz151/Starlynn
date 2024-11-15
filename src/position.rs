@@ -1,5 +1,5 @@
 use arrayvec::ArrayVec;
-use crate::types::{Color, Square, PieceType};
+use crate::types::{Color, Square, PieceType, GameState};
 use crate::bitboard::Bitboard;
 use crate::chess_move::ChessMove;
 use crate::pos_state::*;
