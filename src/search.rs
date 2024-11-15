@@ -97,7 +97,7 @@ impl Tree {
             self.uci_info(avg_depth.round() as u64, max_depth_reached, nodes, start_time);
         }
 
-        let best_root_child: &Node = &self[self.most_visits_root_child()];
+        let best_root_child: &Node = &self[self.highest_q_root_child()];
         (Some(best_root_child.mov.into()), nodes)
     }
 
@@ -248,11 +248,11 @@ impl Tree {
         let elapsed_ms = start_time.elapsed().as_millis();
         let nps = nodes * 1000 / (elapsed_ms.max(1) as u64);
 
-        let most_visits_root_child: &Node = &self[self.most_visits_root_child()];
-        let mov: ChessMove = most_visits_root_child.mov.into();
+        let highest_q_root_child: &Node = &self[self.highest_q_root_child()];
+        let mov: ChessMove = highest_q_root_child.mov.into();
 
         let mut str = format!("info depth {depth} seldepth {seldepth}");
-        str += &format!(" score cp {:.0}", most_visits_root_child.q() * 100.0);
+        str += &format!(" score cp {:.0}", highest_q_root_child.q() * 100.0);
         str += &format!(" nodes {nodes} nps {nps} time {elapsed_ms}");
         str += &format!(" pv {}", mov);
 
@@ -262,17 +262,30 @@ impl Tree {
         println!("{}", str);
     }
 
-    fn most_visits_root_child(&self) -> usize
+    fn highest_q_root_child(&self) -> usize
     {
         let mut best_child_idx = self[0 as usize].first_child_idx;
+        let mut best_q = self[best_child_idx].q();
+
         let mut child_idx = self[best_child_idx].right_sibling_idx;
 
-        while child_idx != -1 {
-            if self[child_idx].visits > self[best_child_idx].visits {
+        while child_idx != -1 && self[child_idx].visits > 0 {
+            let q = self[child_idx].q();
+
+            if q > best_q {
                 best_child_idx = child_idx;
+                best_q = q;
             }
 
             child_idx = self[child_idx].right_sibling_idx;
+        }
+
+        if cfg!(debug_assertions)
+        {
+            while child_idx != -1 {
+                debug_assert!(self[child_idx].visits == 0);
+                child_idx = self[child_idx].right_sibling_idx;
+            }
         }
 
         best_child_idx as usize
