@@ -18,13 +18,10 @@ const _: () = assert!(std::mem::size_of::<Node>() == 4 + 1 + 1 + 4 + 4 + 2);
 impl Node {
     pub fn iter(&self) -> NodeIterator
     {
+        debug_assert!(self.num_moves != 0  || self.game_state.is_terminal());
+
         if self.first_child_idx == -1
         {
-            debug_assert!(
-                || self.num_moves == u8::MAX
-                || (self.num_moves == 0 && self.game_state.is_terminal()));
-
-            debug_assert!(self.visits <= 1);
 
             NodeIterator {
                 next_child_idx: 1,
