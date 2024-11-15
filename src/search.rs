@@ -254,9 +254,9 @@ impl Tree {
     {
         for node_idx in path.iter().rev()
         {
-            wdl = 1.0 - wdl;
             self[*node_idx].visits += 1;
             self[*node_idx].total_score += wdl;
+            wdl = 1.0 - wdl;
         }
     }
 
