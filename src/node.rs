@@ -20,7 +20,8 @@ impl Node {
     {
         if self.first_child_idx == -1
         {
-            debug_assert!(self.num_moves == u8::MAX
+            debug_assert!(
+                || self.num_moves == u8::MAX
                 || (self.num_moves == 0 && self.game_state.is_terminal()));
 
             debug_assert!(self.visits <= 1);

@@ -60,9 +60,25 @@ impl Tree {
         self.backprop(wdl, &mut path);
         self.expand(0, root_pos);
 
-        while self.tree.len() <= self.tree.capacity() - 256
-        {
-            self.make_iteration(root_pos, &mut path);
+        loop {
+            let mut pos = root_pos.clone();
+
+            path.clear();
+            path.push(0); // root node idx
+
+            let mut node_idx = self.select(0, &mut pos, &mut path);
+
+            debug_assert!((self[node_idx].num_moves > 0) == (self[node_idx].game_state == GameState::Ongoing));
+            debug_assert!(self[node_idx].game_state != GameState::Unknown);
+            debug_assert!(self[node_idx].visits > 0);
+
+            if self[node_idx].game_state == GameState::Ongoing {
+                node_idx = self.expand_to(node_idx, &mut pos, &mut path);
+            }
+
+            let wdl = self.simulate(node_idx, &mut pos);
+
+            self.backprop(wdl, &path);
 
             nodes += 1;
 
@@ -89,6 +105,17 @@ impl Tree {
                 self.uci_info(avg_depth_rounded, max_depth_reached, nodes, &start_time);
                 last_reported_depth = avg_depth_rounded;
             }
+
+            if self.tree.len() > self.tree.capacity() - 256 {
+                debug_assert!(self.tree[0].num_moves > 0 && self.tree[0].num_moves != u8::MAX);
+
+                self.tree.truncate(self.tree[0].num_moves as usize + 1); // doesn't change vector capacity
+
+                for node in self.tree.iter_mut().skip(1) {
+                    node.first_child_idx = -1;
+                    node.num_moves = u8::MAX;
+                }
+            }
         }
 
         if print_info {
@@ -98,28 +125,6 @@ impl Tree {
 
         let best_root_child: &Node = &self[self.highest_q_root_child()];
         (Some(best_root_child.mov.into()), nodes)
-    }
-
-    fn make_iteration(&mut self, root_pos: &mut Position, path: &mut Vec<usize>)
-    {
-        path.clear();
-        path.push(0); // root node idx
-
-        let mut pos = root_pos.clone();
-
-        let mut node_idx = self.select(0, &mut pos, path);
-
-        debug_assert!((self[node_idx].num_moves > 0) == (self[node_idx].game_state == GameState::Ongoing));
-        debug_assert!(self[node_idx].game_state != GameState::Unknown);
-        debug_assert!(self[node_idx].visits > 0);
-
-        if self[node_idx].game_state == GameState::Ongoing {
-            node_idx = self.expand_to(node_idx, &mut pos, path);
-        }
-
-        let wdl = self.simulate(node_idx, &mut pos);
-
-        self.backprop(wdl, &path);
     }
 
     fn select(&mut self, node_idx: usize, pos: &mut Position, path: &mut Vec<usize>) -> usize
@@ -162,7 +167,7 @@ impl Tree {
         debug_assert!(self[node_idx].first_child_idx == -1);
         debug_assert!(self[node_idx].num_moves == u8::MAX);
         debug_assert!(self[node_idx].game_state == GameState::Ongoing);
-        debug_assert!(self[node_idx].visits == 1);
+        debug_assert!(self[node_idx].visits == 1 || node_idx <= (self[0 as usize].num_moves as usize));
 
         let moves = pos.moves(false);
         debug_assert!(moves.len() > 0);
@@ -190,7 +195,7 @@ impl Tree {
         debug_assert!(self[node_idx].game_state == GameState::Ongoing);
         debug_assert!(self[node_idx].visits > 0);
 
-        if node_idx > 0 && self[node_idx].visits == 1 {
+        if node_idx > 0 && self[node_idx].first_child_idx == -1 {
             self.expand(node_idx, pos);
         }
 
