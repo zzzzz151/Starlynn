@@ -19,7 +19,7 @@ impl Tree {
         let node_bytes = std::mem::size_of::<Node>();
 
         let nodes = bytes / node_bytes;
-        assert!(nodes > 1 && nodes as i32 <= i32::MAX, "{nodes}");
+        assert!(nodes > 256 && nodes as i32 <= i32::MAX, "{nodes}");
 
         println!("info string Tree size {mib} MiB ({nodes} nodes)");
 
@@ -43,6 +43,7 @@ impl Tree {
             right_sibling_idx: -1,
             first_child_idx: -1,
             game_state: GameState::Ongoing,
+            num_moves: u8::MAX,
             visits: 0,
             total_score: 0.0,
             mov: 0
@@ -54,10 +55,13 @@ impl Tree {
         let mut last_reported_depth: u64 = 0;
 
         let mut path: Vec<usize> = Vec::with_capacity(256);
+        path.push(0); // root node idx
 
-        self.make_iteration(root_pos, &mut path);
+        let wdl = self.simulate(0, root_pos);
+        self.backprop(wdl, &mut path);
+        self.expand(0, root_pos);
 
-        while self.tree.len() < self.tree.capacity()
+        while self.tree.len() <= self.tree.capacity() - 256
         {
             self.make_iteration(root_pos, &mut path);
 
@@ -77,7 +81,7 @@ impl Tree {
                 break;
             }
 
-            if nodes % 512 == 0 && start_time.elapsed() >= *search_duration {
+            if (nodes == 1 || nodes % 512 == 0) && start_time.elapsed() >= *search_duration {
                 break;
             }
 
@@ -111,7 +115,7 @@ impl Tree {
         }
 
         if self[node_idx].game_state == GameState::Ongoing && self[node_idx].visits > 0 {
-            node_idx = self.expand(node_idx, &mut pos, path);
+            node_idx = self.expand_to(node_idx, &mut pos, path);
         }
 
         let wdl = self.simulate(node_idx, &mut pos);
@@ -131,70 +135,71 @@ impl Tree {
         }
 
         let mut best_child_idx = node.first_child_idx as usize;
-        let mut best_uct = f32::MIN;
+        let mut best_puct = f32::MIN;
 
         let mut child_idx: i32 = node.first_child_idx;
 
         while child_idx != -1 {
-            if self[child_idx].visits == 0 {
+            let child: &Node = &self[child_idx];
+
+            if child.visits == 0 { return node_idx; }
+
+            let puct = node.puct(child);
+
+            if puct > best_puct {
                 best_child_idx = child_idx as usize;
-                break;
+                best_puct = puct;
             }
 
-            let uct = self[child_idx].uct(node.visits);
-
-            if uct > best_uct {
-                best_child_idx = child_idx as usize;
-                best_uct = uct;
-            }
-
-            child_idx = self[child_idx].right_sibling_idx;
+            child_idx = child.right_sibling_idx;
         }
 
         pos.make_move(self[best_child_idx].mov.into());
         path.push(best_child_idx);
 
-        if self[best_child_idx].visits == 0 {
-            return best_child_idx;
-        }
-
         self.select(best_child_idx, pos, path)
     }
 
-    fn expand(&mut self, node_idx: usize, pos: &mut Position, path: &mut Vec<usize>) -> usize
+    fn expand(&mut self, node_idx: usize, pos: &mut Position)
+    {
+        debug_assert!(self[node_idx].num_moves == u8::MAX);
+        debug_assert!(self[node_idx].first_child_idx == -1);
+        debug_assert!(self[node_idx].visits == 1);
+
+        let moves = pos.moves(false);
+        debug_assert!(moves.len() > 0);
+
+        self[node_idx].num_moves = moves.len() as u8;
+        self[node_idx].first_child_idx = self.tree.len() as i32;
+
+        for (i, mov) in moves.iter().enumerate()
+        {
+            let i = i as i32;
+
+            self.tree.push(Node {
+                right_sibling_idx: self[node_idx].first_child_idx + i + 1,
+                first_child_idx: -1,
+                game_state: GameState::Unknown,
+                num_moves: u8::MAX,
+                visits: 0,
+                total_score: 0.0,
+                mov: u16::from(*mov)
+            });
+        }
+
+        debug_assert!(self.tree.len() <= self.tree.capacity());
+
+        self.tree.last_mut().unwrap().right_sibling_idx = -1;
+    }
+
+    fn expand_to(&mut self, node_idx: usize, pos: &mut Position, path: &mut Vec<usize>) -> usize
     {
         debug_assert!(pos.has_move());
 
-        if self[node_idx].visits == 1
-        {
-            debug_assert!(self[node_idx].first_child_idx == -1);
-            self[node_idx].first_child_idx = self.tree.len() as i32;
-
-            let moves = pos.moves(false);
-            debug_assert!(moves.len() > 0); // can't expand a terminal node
-
-            for (i, mov) in moves.iter().enumerate()
-            {
-                let i = i as i32;
-
-                self.tree.push(Node {
-                    right_sibling_idx: self[node_idx].first_child_idx + i + 1,
-                    first_child_idx: -1,
-                    game_state: GameState::Unknown,
-                    visits: 0,
-                    total_score: 0.0,
-                    mov: u16::from(*mov)
-                });
-
-                if self.tree.len() >= self.tree.capacity() {
-                    break;
-                }
-            }
-
-            self.tree.last_mut().unwrap().right_sibling_idx = -1;
+        if node_idx > 0 && self[node_idx].visits == 1 {
+            self.expand(node_idx, pos);
         }
 
-        debug_assert!(self[node_idx].first_child_idx != -1);
         let mut child_idx = self[node_idx].first_child_idx;
 
         while child_idx != -1 && self[child_idx].visits > 0 {
@@ -240,8 +245,6 @@ impl Tree {
 
     fn uci_info(&self, depth: u64, seldepth: u64, nodes: u64, start_time: &Instant)
     {
-        debug_assert!(self[0 as usize].first_child_idx != -1);
-
         let elapsed_ms = start_time.elapsed().as_millis();
         let nps = nodes * 1000 / (elapsed_ms.max(1) as u64);
 
@@ -249,7 +252,7 @@ impl Tree {
         let mov: ChessMove = most_visits_root_child.mov.into();
 
         let mut str = format!("info depth {depth} seldepth {seldepth}");
-        str += &format!(" score cp {:.0}", most_visits_root_child.score::<f64>() * 100.0);
+        str += &format!(" score cp {:.0}", most_visits_root_child.q() * 100.0);
         str += &format!(" nodes {nodes} nps {nps} time {elapsed_ms}");
         str += &format!(" pv {}", mov);
 
@@ -296,7 +299,7 @@ impl Tree {
 impl fmt::Display for Tree {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
     {
-        println!("Allocated nodes {}/{}", self.tree.len(), self.tree.capacity());
+        println!("Nodes allocated {}/{}", self.tree.len(), self.tree.capacity());
         self.print_tree(f, 0, 0)
     }
 }
