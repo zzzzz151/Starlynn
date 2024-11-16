@@ -62,7 +62,24 @@ impl Tree {
 
         while self.tree.len() <= self.tree.capacity() - 256
         {
-            self.make_iteration(root_pos, &mut path);
+            let mut pos = root_pos.clone();
+
+            path.clear();
+            path.push(0); // root node idx
+
+            let mut node_idx = self.select(0, &mut pos, &mut path);
+
+            debug_assert!((self[node_idx].num_moves > 0) == (self[node_idx].game_state == GameState::Ongoing));
+            debug_assert!(self[node_idx].game_state != GameState::Unknown);
+            debug_assert!(self[node_idx].visits > 0);
+
+            if self[node_idx].game_state == GameState::Ongoing {
+                node_idx = self.expand_to(node_idx, &mut pos, &mut path);
+            }
+
+            let wdl = self.simulate(node_idx, &mut pos);
+
+            self.backprop(wdl, &path);
 
             nodes += 1;
 
@@ -98,28 +115,6 @@ impl Tree {
 
         let best_root_child: &Node = &self[self.highest_q_root_child()];
         (Some(best_root_child.mov.into()), nodes)
-    }
-
-    fn make_iteration(&mut self, root_pos: &mut Position, path: &mut Vec<usize>)
-    {
-        path.clear();
-        path.push(0); // root node idx
-
-        let mut pos = root_pos.clone();
-
-        let mut node_idx = self.select(0, &mut pos, path);
-
-        debug_assert!((self[node_idx].num_moves > 0) == (self[node_idx].game_state == GameState::Ongoing));
-        debug_assert!(self[node_idx].game_state != GameState::Unknown);
-        debug_assert!(self[node_idx].visits > 0);
-
-        if self[node_idx].game_state == GameState::Ongoing {
-            node_idx = self.expand_to(node_idx, &mut pos, path);
-        }
-
-        let wdl = self.simulate(node_idx, &mut pos);
-
-        self.backprop(wdl, &path);
     }
 
     fn select(&mut self, node_idx: usize, pos: &mut Position, path: &mut Vec<usize>) -> usize
@@ -238,7 +233,7 @@ impl Tree {
             }
             GameState::Ongoing => {
                 // Sigmoid converts centipawns to wdl
-                let eval_scaled = pos.eval() as f32 / 400.0;
+                let eval_scaled = pos.eval() as f32 / 300.0;
                 let exp = (-eval_scaled).exp();
                 let wdl = 1.0 / (1.0 + exp);
 
