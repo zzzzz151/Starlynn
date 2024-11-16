@@ -233,7 +233,7 @@ impl Tree {
             }
             GameState::Ongoing => {
                 // Sigmoid converts centipawns to wdl
-                let eval_scaled = pos.eval() as f32 / 300.0;
+                let eval_scaled = pos.eval() as f32 / 500.0;
                 let exp = (-eval_scaled).exp();
                 let wdl = 1.0 / (1.0 + exp);
 
