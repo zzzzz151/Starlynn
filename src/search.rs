@@ -58,10 +58,9 @@ impl Tree {
         let mut nodes: u64 = 0;
         let mut depths_sum: u64 = 0;
         let mut max_depth_reached: u64 = 0;
-        let mut last_reported_depth: u64 = 0;
+        let mut last_reported_sec: u64 = 0;
 
-        while self.tree.len() <= self.tree.capacity() - 256
-        {
+        loop {
             let mut pos = root_pos.clone();
 
             path.clear();
@@ -73,7 +72,9 @@ impl Tree {
             debug_assert!(self[node_idx].game_state != GameState::Unknown);
             debug_assert!(self[node_idx].visits > 0);
 
-            if self[node_idx].game_state == GameState::Ongoing {
+            if self[node_idx].game_state == GameState::Ongoing
+            && !(self[node_idx].first_child_idx == -1 && self.tree.len() > self.tree.capacity() - 256)
+            {
                 node_idx = self.expand_to(node_idx, &mut pos, &mut path);
             }
 
@@ -101,10 +102,14 @@ impl Tree {
                 break;
             }
 
-            if print_info && avg_depth_rounded != last_reported_depth
+            if !print_info || nodes % 512 != 0 { continue; }
+
+            let this_sec = start_time.elapsed().as_millis() as u64 / 3000;
+
+            if this_sec > last_reported_sec
             {
                 self.uci_info(avg_depth_rounded, max_depth_reached, nodes, &start_time);
-                last_reported_depth = avg_depth_rounded;
+                last_reported_sec = this_sec;
             }
         }
 
