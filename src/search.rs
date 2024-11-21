@@ -48,17 +48,17 @@ impl Tree {
             total_score: 0.0
         });
 
-        let mut nodes: u64 = 0;
-        let mut depths_sum: u64 = 0;
-        let mut max_depth_reached: u64 = 0;
-        let mut last_reported_depth: u64 = 0;
-
         let mut path: Vec<usize> = Vec::with_capacity(256);
         path.push(0); // root node idx
 
         let wdl = self.simulate(0, root_pos);
         self.backprop(wdl, &mut path);
         self.expand(0, root_pos);
+
+        let mut nodes: u64 = 0;
+        let mut depths_sum: u64 = 0;
+        let mut max_depth_reached: u64 = 0;
+        let mut last_reported_depth: u64 = 0;
 
         while self.tree.len() <= self.tree.capacity() - 256
         {

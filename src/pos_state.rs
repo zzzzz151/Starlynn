@@ -391,8 +391,9 @@ impl PosState {
 
     pub fn make_move(&mut self, mov: ChessMove)
     {
-        let from: Square = mov.from();
-        let to: Square = mov.to();
+        let from: Square = mov.src();
+        let to: Square   = mov.dst();
+
         let piece_type = mov.piece_type();
         let mut captured: Option<PieceType> = None;
 

@@ -39,13 +39,13 @@ impl ChessMove {
         mov
     }
 
-    pub const fn from(self) -> Square
+    pub const fn src(self) -> Square
     {
         let square_idx: u16 = (self.mov >> 10) & 0b111111;
         unsafe { std::mem::transmute(square_idx as u8) }
     }
 
-    pub const fn to(self) -> Square
+    pub const fn dst(self) -> Square
     {
         let square_idx: u16 = (self.mov >> 4) & 0b111111;
         unsafe { std::mem::transmute(square_idx as u8) }
@@ -82,7 +82,7 @@ impl ChessMove {
     }
 
     pub fn is_castling(self) -> bool {
-        self.piece_type() == PieceType::King && self.from().abs_diff(self.to()) == 2
+        self.piece_type() == PieceType::King && self.src().abs_diff(self.dst()) == 2
     }
 }
 
@@ -96,10 +96,10 @@ impl fmt::Display for ChessMove {
         if let Some(promotion) = self.promo_piece_type()
         {
             let str_promo = promotion.to_string().to_lowercase();
-            write!(f, "{}{}{}", self.from(), self.to(), str_promo)
+            write!(f, "{}{}{}", self.src(), self.dst(), str_promo)
         }
         else {
-            write!(f, "{}{}", self.from(), self.to())
+            write!(f, "{}{}", self.src(), self.dst())
         }
 
     }
@@ -125,8 +125,8 @@ mod tests {
     fn test_normal_move() {
         // Knight move
         let mut mov = ChessMove::new(Square::B1, Square::C3, PieceType::Knight);
-        assert_eq!(mov.from(), Square::B1);
-        assert_eq!(mov.to(), Square::C3);
+        assert_eq!(mov.src(), Square::B1);
+        assert_eq!(mov.dst(), Square::C3);
         assert_eq!(mov.piece_type(), PieceType::Knight);
         assert_eq!(mov.promo_piece_type(), None);
         assert!(!mov.is_castling());
