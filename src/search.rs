@@ -98,11 +98,11 @@ impl Tree {
                 break;
             }
 
-            if (nodes == 1 || nodes % 512 == 0) && start_time.elapsed() >= *search_duration {
+            if (nodes == 1 || nodes % 1024 == 0) && start_time.elapsed() >= *search_duration {
                 break;
             }
 
-            if !print_info || nodes % 512 != 0 { continue; }
+            if !print_info || nodes % 1024 != 0 { continue; }
 
             let this_sec = start_time.elapsed().as_millis() as u64 / 3000;
 
