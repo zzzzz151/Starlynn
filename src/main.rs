@@ -112,7 +112,7 @@ fn run_command(command: &str, pos: &mut Position, tree: &mut Tree)
         }
         "bench" => {
             let depth = tokens.get(1)
-                .and_then(|token| token.parse::<i64>().ok()).unwrap_or(5);
+                .and_then(|token| token.parse::<i64>().ok()).unwrap_or(4);
 
             bench(depth.max(1) as u8);
         },
