@@ -4,7 +4,13 @@
 **/*.exe
 **/starlynn
 **/Starlynn
+**/*.pdb
 
 **/*.txt
 **/*.epd
 **/*.pgn
+
+
+# Added by cargo
+
+/target
