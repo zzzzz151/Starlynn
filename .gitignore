@@ -1,0 +1,12 @@
+**/.vscode/
+
+**/*.lock
+
+**/target/
+**/*.exe
+**/starlynn
+**/Starlynn
+**/*.pdb
+
+**/*.epd
+**/*.pgn
