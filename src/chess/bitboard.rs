@@ -6,7 +6,7 @@ use derive_more::{
     Not, Shl, ShlAssign, Shr, ShrAssign
 };
 
-use super::types::*;
+use super::types::{File, Rank, Square};
 
 #[rustfmt::skip]
 #[derive(

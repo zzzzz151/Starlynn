@@ -1,5 +1,4 @@
 use super::types::*;
-use crate::utils::NonZeroExt;
 use std::fmt;
 use std::mem::{size_of, transmute};
 use std::num::NonZeroU16;
@@ -17,7 +16,8 @@ impl ChessMove {
         mov |= (dst as u16) << 6;
         mov |= (pt as u16) << 12;
 
-        ChessMove::from(NonZeroU16::new_checked_in_debug(mov))
+        debug_assert!(mov > 0);
+        ChessMove::from(unsafe { NonZeroU16::new_unchecked(mov) })
     }
 
     pub fn new_promotion(src: Square, dst: Square, promo_pt: PieceType) -> Self {

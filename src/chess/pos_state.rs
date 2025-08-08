@@ -227,6 +227,15 @@ impl PosState {
         }
     }
 
+    pub fn captured(&self, mov: ChessMove) -> Option<PieceType> {
+        // En passant
+        if mov.piece_type() == PieceType::Pawn && Some(mov.dst()) == self.en_passant_square {
+            return Some(PieceType::Pawn);
+        }
+
+        self.at(mov.dst())
+    }
+
     fn toggle_piece(&mut self, color: Color, pt: PieceType, sq: Square) {
         self.color_bbs[color] ^= Bitboard::from(sq);
         self.piece_bbs[pt] ^= Bitboard::from(sq);

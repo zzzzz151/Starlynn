@@ -7,7 +7,7 @@ pub fn perft(pos: &mut Position, depth: u32) -> u64 {
         return 1;
     }
 
-    let moves = pos.legal_moves(true);
+    let moves = pos.legal_moves();
 
     if depth == 1 {
         return moves.len() as u64;
@@ -28,7 +28,7 @@ pub fn perft_split(pos: &mut Position, depth: NonZeroU32) {
     let start_time = Instant::now();
     let mut total_nodes: u64 = 0;
 
-    for mov in pos.legal_moves(true) {
+    for mov in pos.legal_moves() {
         pos.make_move(mov);
 
         let nodes: u64 = perft(pos, depth.get() - 1);

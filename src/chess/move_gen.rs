@@ -8,7 +8,7 @@ use arrayvec::ArrayVec;
 use std::mem::transmute;
 
 impl PosState {
-    pub fn legal_moves(&self, underpromos: bool) -> ArrayVec<ChessMove, 256> {
+    pub fn legal_moves(&self) -> ArrayVec<ChessMove, 256> {
         let mut moves = ArrayVec::<ChessMove, 256>::new();
 
         let stm: Color = self.side_to_move();
@@ -37,11 +37,7 @@ impl PosState {
             ] {
                 let has_right = self.castling_rights().contains(rook_src);
 
-                #[rustfmt::skip]
-                debug_assert!(
-                    !has_right ||
-                    self.piece_bb(stm, PieceType::Rook).contains(rook_src)
-                );
+                debug_assert!(!has_right || self.piece_bb(stm, PieceType::Rook).contains(rook_src));
 
                 let must_not_attacked_sq1: Square =
                     unsafe { transmute((our_king_sq as i32 + mul) as u8) };
@@ -92,10 +88,8 @@ impl PosState {
 
             movs.push(ChessMove::new_promotion(src, dst, PieceType::Queen));
 
-            if underpromos {
-                for promo_pt in [PieceType::Knight, PieceType::Rook, PieceType::Bishop] {
-                    movs.push(ChessMove::new_promotion(src, dst, promo_pt));
-                }
+            for promo_pt in [PieceType::Knight, PieceType::Rook, PieceType::Bishop] {
+                movs.push(ChessMove::new_promotion(src, dst, promo_pt));
             }
         };
 

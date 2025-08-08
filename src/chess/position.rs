@@ -1,11 +1,11 @@
 use super::bitboard::Bitboard;
 use super::chess_move::ChessMove;
 use super::pos_state::PosState;
-use super::types::*;
+use super::types::{Color, PieceType, Square};
 use arrayvec::ArrayVec;
 use delegate::delegate;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Position {
     states: Vec<PosState>,
 }
@@ -46,12 +46,13 @@ impl Position {
             pub fn at(&self, sq: Square) -> Option<PieceType>;
             pub fn color_at(&self, sq: Square) -> Option<Color>;
             pub fn king_square(&self, color: Color) -> Square;
+            pub fn captured(&self, mov: ChessMove) -> Option<PieceType>;
             pub fn fen(&self) -> String;
             pub fn display(&self);
             pub fn attacks(&self, color: Color, occ: Bitboard) -> Bitboard;
             pub fn attackers(&self, sq: Square) -> Bitboard;
             pub fn pinned(&self) -> (Bitboard, Bitboard);
-            pub fn legal_moves(&self, underpromos: bool) -> ArrayVec<ChessMove, 256>;
+            pub fn legal_moves(&self) -> ArrayVec<ChessMove, 256>;
         }
     }
 
