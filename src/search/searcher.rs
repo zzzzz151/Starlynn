@@ -62,7 +62,7 @@ impl Searcher {
             self.root_depth = depth;
             self.sel_depth = 0;
 
-            let score: i32 = self.negamax(depth, 0);
+            let score: i32 = self.negamax(depth, 0, -INF, INF);
             let elapsed = self.start_time.elapsed();
 
             if depth > 1
@@ -107,7 +107,7 @@ impl Searcher {
         (best_move, self.nodes)
     }
 
-    fn negamax(&mut self, depth: i32, ply: u32) -> i32 {
+    fn negamax(&mut self, depth: i32, ply: u32, mut alpha: i32, beta: i32) -> i32 {
         if self.max_duration_hit {
             debug_assert!(self.root_depth > 1);
             return 0;
@@ -158,7 +158,7 @@ impl Searcher {
             self.pos.make_move(mov);
             self.nodes += 1;
 
-            let score: i32 = -self.negamax(depth - 1, ply + 1);
+            let score: i32 = -self.negamax(depth - 1, ply + 1, -beta, -alpha);
 
             self.pos.undo_move();
 
@@ -166,12 +166,24 @@ impl Searcher {
                 return 0;
             }
 
-            if score > best_score && ply == 0 {
+            best_score = best_score.max(score);
+
+            // Fail low?
+            if score <= alpha {
+                continue;
+            }
+
+            alpha = score;
+
+            if ply == 0 {
                 self.pv_table[0].clear();
                 self.pv_table[0].push(mov);
             }
 
-            best_score = best_score.max(score);
+            // Fail high?
+            if score >= beta {
+                break;
+            }
         }
 
         debug_assert!(best_score.abs() < INF);
