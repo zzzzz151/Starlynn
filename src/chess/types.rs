@@ -2,8 +2,8 @@ use std::mem::transmute;
 use std::ops::{Index, IndexMut, Not};
 use strum_macros::{Display, EnumIter, EnumString};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Display, EnumString, EnumIter)]
 #[repr(u8)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Display, EnumString, EnumIter)]
 #[strum(serialize_all = "lowercase", ascii_case_insensitive)]
 #[rustfmt::skip]
 pub enum Square {
@@ -17,29 +17,29 @@ pub enum Square {
     A8, B8, C8, D8, E8, F8, G8, H8
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, EnumIter)]
 #[repr(u8)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, EnumIter)]
 #[rustfmt::skip]
 pub enum File {
     A, B, C, D, E, F, G, H
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, EnumIter)]
 #[repr(u8)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, EnumIter)]
 #[rustfmt::skip]
 pub enum Rank {
     Rank1, Rank2, Rank3, Rank4, Rank5, Rank6, Rank7, Rank8
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u8)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[rustfmt::skip]
 pub enum Color {
     White, Black
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, EnumIter)]
 #[repr(u8)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, EnumIter)]
 #[rustfmt::skip]
 pub enum PieceType {
     Pawn, Knight, Bishop, Rook, Queen, King
@@ -67,7 +67,7 @@ impl Square {
     }
 
     pub const fn abs_diff(self, other: Square) -> u32 {
-        let diff = self as i32 - (other as i32);
+        let diff: i32 = self as i32 - (other as i32);
         diff.unsigned_abs()
     }
 }

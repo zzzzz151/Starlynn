@@ -38,7 +38,7 @@ pub const fn rand(mut state: u64) -> u64 {
 
 pub const ZOBRIST_COLOR: u64 = 207374551981581248;
 
-// [color][piece_type][square]
+// [piece_color][piece_type][square]
 pub const ZOBRIST_PIECES: [[[u64; 64]; 6]; 2] = {
     let mut array = [[[0; 64]; 6]; 2];
     let mut rng_state: u64 = 180_620_142;

@@ -8,8 +8,8 @@ use std::mem::transmute;
 use std::num::NonZeroU16;
 use strum::IntoEnumIterator;
 
-#[derive(Clone, Debug)]
 // #[repr(packed)]
+#[derive(Clone, Debug)]
 pub struct PosState {
     stm: Color,
     color_bbs: [Bitboard; 2], // [color]
@@ -19,6 +19,7 @@ pub struct PosState {
     plies_since_pawn_or_capture: u16,
     move_counter: NonZeroU16,
     last_move: Option<ChessMove>,
+    pt_captured: Option<PieceType>,
     checkers: Bitboard,
     zobrist_hash: u64,
 }
@@ -26,7 +27,6 @@ pub struct PosState {
 impl Eq for PosState {}
 
 impl PartialEq for PosState {
-    // Ignores last move
     #[rustfmt::skip]
     fn eq(&self, other: &Self) -> bool {
         self.stm == other.stm &&
@@ -60,6 +60,7 @@ impl TryFrom<&str> for PosState {
             plies_since_pawn_or_capture: 0,
             move_counter: unsafe { NonZeroU16::new_unchecked(1) },
             last_move: None,
+            pt_captured: None,
             checkers: Bitboard::from(0),
             zobrist_hash: 0,
         };
@@ -77,7 +78,7 @@ impl TryFrom<&str> for PosState {
             for chr in rank_of_pieces.chars() {
                 // Is this char a digit (in base 10)?
                 if let Some(digit) = chr.to_digit(10) {
-                    let new_file_idx = file as u8 + (digit as u8);
+                    let new_file_idx: u8 = file as u8 + (digit as u8);
                     file = unsafe { transmute(new_file_idx.min(File::H as u8)) }
                 }
                 // Else we have a piece
@@ -187,6 +188,19 @@ impl PosState {
         self.last_move
     }
 
+    pub const fn piece_type_captured(&self) -> Option<PieceType> {
+        self.pt_captured
+    }
+
+    pub fn piece_type_captured_by(&self, mov: ChessMove) -> Option<PieceType> {
+        // En passant
+        if mov.piece_type() == PieceType::Pawn && Some(mov.dst()) == self.en_passant_square {
+            return Some(PieceType::Pawn);
+        }
+
+        self.at(mov.dst())
+    }
+
     pub const fn checkers(&self) -> Bitboard {
         self.checkers
     }
@@ -225,15 +239,6 @@ impl PosState {
                 .first_square()
                 .unwrap_unchecked()
         }
-    }
-
-    pub fn captured(&self, mov: ChessMove) -> Option<PieceType> {
-        // En passant
-        if mov.piece_type() == PieceType::Pawn && Some(mov.dst()) == self.en_passant_square {
-            return Some(PieceType::Pawn);
-        }
-
-        self.at(mov.dst())
     }
 
     fn toggle_piece(&mut self, color: Color, pt: PieceType, sq: Square) {
@@ -345,10 +350,10 @@ impl PosState {
             attacks |= KNIGHT_ATTACKS[square];
         }
 
-        let color_bishops_queens =
+        let color_bishops_queens: Bitboard =
             self.piece_bb(color, PieceType::Bishop) | self.piece_bb(color, PieceType::Queen);
 
-        let color_rooks_queens =
+        let color_rooks_queens: Bitboard =
             self.piece_bb(color, PieceType::Rook) | self.piece_bb(color, PieceType::Queen);
 
         for square in color_bishops_queens {
@@ -371,9 +376,11 @@ impl PosState {
 
         attackers_bb |= self.piece_bbs[PieceType::Knight] & KNIGHT_ATTACKS[sq];
 
-        let bishops_queens = self.piece_bbs[PieceType::Bishop] | self.piece_bbs[PieceType::Queen];
+        let bishops_queens: Bitboard =
+            self.piece_bbs[PieceType::Bishop] | self.piece_bbs[PieceType::Queen];
 
-        let rooks_queens = self.piece_bbs[PieceType::Rook] | self.piece_bbs[PieceType::Queen];
+        let rooks_queens: Bitboard =
+            self.piece_bbs[PieceType::Rook] | self.piece_bbs[PieceType::Queen];
 
         attackers_bb |= bishops_queens & BISHOP_ATTACKS[sq].attacks(self.occupancy());
         attackers_bb |= rooks_queens & ROOK_ATTACKS[sq].attacks(self.occupancy());
@@ -391,14 +398,14 @@ impl PosState {
         // Calculate pinned_orthogonal
 
         let our_king_sq: Square = self.king_square(self.stm);
-        let occ = self.occupancy();
+        let occ: Bitboard = self.occupancy();
 
         let rooks_queens = self.piece_bbs[PieceType::Rook] | self.piece_bbs[PieceType::Queen];
         let rook_atks = ROOK_ATTACKS[our_king_sq].attacks(occ);
         let mut new_occ = occ ^ (rook_atks & self.us());
         let xray_rook = rook_atks ^ ROOK_ATTACKS[our_king_sq].attacks(new_occ);
 
-        let pinners_orthogonal = self.them() & rooks_queens & xray_rook;
+        let pinners_orthogonal: Bitboard = self.them() & rooks_queens & xray_rook;
         for pinner_sq in pinners_orthogonal {
             pinned_orthogonal |= self.us() & BETWEEN_EXCLUSIVE[our_king_sq][pinner_sq];
         }
@@ -410,7 +417,7 @@ impl PosState {
         new_occ = occ ^ (bishop_atks & self.us());
         let xray_bishop = bishop_atks ^ BISHOP_ATTACKS[our_king_sq].attacks(new_occ);
 
-        let pinners_diagonal = self.them() & bshps_queens & xray_bishop;
+        let pinners_diagonal: Bitboard = self.them() & bshps_queens & xray_bishop;
         for pinner_sq in pinners_diagonal {
             pinned_diagonal |= self.us() & BETWEEN_EXCLUSIVE[our_king_sq][pinner_sq];
         }
@@ -431,13 +438,13 @@ impl PosState {
 
         let is_en_passant = pt_moving == PieceType::Pawn && Some(dst) == self.en_passant_square;
 
-        let pt_captured: Option<PieceType> = if is_en_passant {
+        self.pt_captured = if is_en_passant {
             Some(PieceType::Pawn)
         } else {
             self.at(dst)
         };
 
-        if let Some(pt_captured) = pt_captured {
+        if let Some(pt_captured) = self.pt_captured {
             let captured_piece_sq: Square = if is_en_passant {
                 unsafe { transmute(dst as u8 ^ 8) }
             } else {
@@ -500,7 +507,7 @@ impl PosState {
             self.zobrist_hash ^= ZOBRIST_FILES[ep_sq.file()];
         }
 
-        if pt_moving == PieceType::Pawn || pt_captured.is_some() {
+        if pt_moving == PieceType::Pawn || self.pt_captured.is_some() {
             self.plies_since_pawn_or_capture = 0;
         } else {
             self.plies_since_pawn_or_capture += 1;

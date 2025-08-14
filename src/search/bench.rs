@@ -1,9 +1,9 @@
-use super::searcher::Searcher;
+use super::search::*;
 use crate::chess::position::Position;
 use std::num::NonZeroU32;
 use std::time::{Duration, Instant};
 
-pub const DEFAULT_BENCH_DEPTH: NonZeroU32 = NonZeroU32::new(6).unwrap();
+pub const DEFAULT_BENCH_DEPTH: NonZeroU32 = NonZeroU32::new(5).unwrap();
 
 const BENCH_FENS: [&str; 52] = [
     "r3k2r/2pb1ppp/2pp1q2/p7/1nP1B3/1P2P3/P2N1PPP/R2QK2R w KQkq a6 0 14",
@@ -61,15 +61,24 @@ const BENCH_FENS: [&str; 52] = [
 ];
 
 pub fn bench(depth: NonZeroU32) {
-    let mut searcher = Searcher::new();
+    let mut limits = SearchLimits {
+        start_time: Instant::now(),
+        max_depth: Some(depth),
+        max_nodes: None,
+        max_duration: None,
+        max_duration_hit: false,
+    };
+
+    let mut td = ThreadData::new();
+
     let mut total_nodes: u64 = 0;
     let mut duration = Duration::new(0, 0);
 
     for fen in BENCH_FENS {
-        let pos = Position::try_from(fen).unwrap();
+        td.pos = Position::try_from(fen).unwrap();
 
         let start_time = Instant::now();
-        let nodes: u64 = searcher.search(&pos, Some(depth), None, None, false).1;
+        let nodes: u64 = search(&mut limits, &mut td, false).1;
 
         duration += start_time.elapsed();
         total_nodes += nodes;

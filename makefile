@@ -9,4 +9,4 @@ endif
 all:
 	cargo rustc --release -- -C target-cpu=native --emit link=$(NAME)
 debug:
-	cargo rustc -- -C target-cpu=native --emit link=$(NAME)
+	cargo rustc -- -C target-cpu=native -C opt-level=3 -C debug-assertions --emit link=$(NAME)
