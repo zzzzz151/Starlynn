@@ -5,7 +5,7 @@ mod nn;
 mod search;
 mod uci;
 
-use search::search::ThreadData;
+use search::thread_data::ThreadData;
 
 fn main() {
     println!("Starlynn by zzzzz");

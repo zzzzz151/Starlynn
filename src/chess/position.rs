@@ -42,6 +42,7 @@ impl Position {
             pub fn at(&self, sq: Square) -> Option<PieceType>;
             pub fn color_at(&self, sq: Square) -> Option<Color>;
             pub fn king_square(&self, color: Color) -> Square;
+            pub fn is_capture(&self, mov: ChessMove) -> bool;
             pub fn fen(&self) -> String;
             pub fn display(&self);
             pub fn attacks(&self, color: Color, occ: Bitboard) -> Bitboard;
