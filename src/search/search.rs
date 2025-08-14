@@ -1,10 +1,13 @@
-use super::move_sorting::{get_scored_moves, remove_best_move};
 use crate::chess::{chess_move::ChessMove, position::Position, util::FEN_START};
-use crate::nn::{accumulator::BothAccumulators, value_policy_heads::value_eval};
 use arrayvec::ArrayVec;
 use std::array::from_fn;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::time::{Duration, Instant};
+
+use crate::nn::{
+    accumulator::BothAccumulators,
+    value_policy_heads::{get_policy_logits, value_eval},
+};
 
 const MAX_DEPTH: i32 = 100;
 const INF: i32 = 30000;
@@ -172,7 +175,7 @@ fn negamax(
         return value_eval(accs, td.pos.side_to_move());
     }
 
-    let mut scored_moves = get_scored_moves(&td.pos, &legal_moves);
+    let mut scored_moves = get_policy_logits(accs, td.pos.side_to_move(), &legal_moves);
     let mut best_score: i32 = -INF;
 
     while let Some((mov, _)) = remove_best_move(&mut scored_moves) {
@@ -215,4 +218,24 @@ fn negamax(
 
     debug_assert!(best_score.abs() < INF);
     best_score
+}
+
+pub fn remove_best_move<T: Copy + PartialOrd>(
+    scored_moves: &mut ArrayVec<(ChessMove, T), 256>,
+) -> Option<(ChessMove, T)> {
+    if scored_moves.is_empty() {
+        return None;
+    }
+
+    let mut best_idx: usize = 0;
+
+    for i in 1..scored_moves.len() {
+        let best_score: T = unsafe { scored_moves.get_unchecked(best_idx).1 };
+
+        if scored_moves[i].1 > best_score {
+            best_idx = i;
+        }
+    }
+
+    Some(scored_moves.swap_remove(best_idx))
 }
