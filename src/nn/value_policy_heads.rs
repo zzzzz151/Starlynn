@@ -1,5 +1,6 @@
+use super::accumulator::BothAccumulators;
+use super::moves_map::get_move_idx_1882;
 use super::params::*;
-use super::{accumulator::BothAccumulators, moves_map::get_move_idx_1882};
 use crate::chess::{chess_move::ChessMove, types::Color, types::Square};
 use arrayvec::ArrayVec;
 

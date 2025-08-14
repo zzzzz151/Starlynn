@@ -1,3 +1,4 @@
+use crate::nn::{accumulator::BothAccumulators, moves_map::map_moves_1880, value_policy_heads::*};
 use std::fs::File;
 use std::io::Write;
 use std::mem::size_of;
@@ -13,11 +14,8 @@ use crate::chess::{
     util::FEN_START,
 };
 
-use crate::nn::{accumulator::BothAccumulators, moves_map::map_moves_1880, value_policy_heads::*};
-
 use crate::search::{
     bench::{DEFAULT_BENCH_DEPTH, bench},
-    move_sorting::remove_best_move,
     search::*,
 };
 
