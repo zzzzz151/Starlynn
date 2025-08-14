@@ -28,10 +28,6 @@ impl BothAccumulators {
         }
     }
 
-    pub const fn unactivated_accs(&self) -> (&[[i16; HALF_HL_SIZE]; 2], bool) {
-        (&self.unactivated_accs, self.is_unactivated_updated)
-    }
-
     // SCReLU activation
     // clamp(x, 0.0, 1.0)^2
     // clamp(x, 0, FT_Q)^2
@@ -74,7 +70,7 @@ impl BothAccumulators {
         if self.is_unactivated_updated {
             debug_assert_eq!(
                 &self.unactivated_accs,
-                BothAccumulators::from(pos_after_move).unactivated_accs().0
+                &BothAccumulators::from(pos_after_move).unactivated_accs
             );
 
             return;
@@ -146,7 +142,7 @@ impl BothAccumulators {
 
         debug_assert_eq!(
             &self.unactivated_accs,
-            BothAccumulators::from(pos_after_move).unactivated_accs().0
+            &BothAccumulators::from(pos_after_move).unactivated_accs
         );
     }
 }
