@@ -1,18 +1,17 @@
 #![allow(clippy::missing_transmute_annotations)]
 
 mod chess;
+mod nn;
 mod search;
 mod uci;
 
-use chess::{position::Position, util::FEN_START};
-use search::searcher::Searcher;
+use search::search::ThreadData;
 
 fn main() {
     println!("Starlynn by zzzzz");
 
     let args: Vec<String> = std::env::args().collect();
-    let mut pos = Position::try_from(FEN_START).unwrap();
-    let mut searcher = Searcher::new();
+    let mut td = ThreadData::new();
 
     if args.len() > 1 {
         let input: String = args[1..]
@@ -21,7 +20,7 @@ fn main() {
             .collect::<Vec<&str>>()
             .join(" ");
 
-        uci::run_command(&input, &mut pos, &mut searcher);
+        uci::run_command(&input, &mut td);
         return;
     }
 
@@ -31,7 +30,7 @@ fn main() {
             .read_line(&mut input)
             .expect("Error reading input");
 
-        uci::run_command(&input, &mut pos, &mut searcher);
+        uci::run_command(&input, &mut td);
         input.clear();
     }
 }

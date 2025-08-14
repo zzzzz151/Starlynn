@@ -6,20 +6,14 @@ use arrayvec::ArrayVec;
 use delegate::delegate;
 
 #[derive(Clone)]
-pub struct Position {
-    states: Vec<PosState>,
-}
+pub struct Position(Vec<PosState>);
 
 impl TryFrom<&str> for Position {
     type Error = String;
 
     fn try_from(fen: &str) -> Result<Self, Self::Error> {
-        let mut pos = Position {
-            states: Vec::with_capacity(512),
-        };
-
-        pos.states.push(PosState::try_from(fen)?);
-
+        let mut pos = Position(Vec::with_capacity(512));
+        pos.0.push(PosState::try_from(fen)?);
         Ok(pos)
     }
 }
@@ -28,8 +22,8 @@ impl TryFrom<&str> for Position {
 impl Position {
     delegate! {
         to {
-            debug_assert!(!self.states.is_empty());
-            unsafe { self.states.last().unwrap_unchecked() }
+            debug_assert!(!self.0.is_empty());
+            unsafe { self.0.last().unwrap_unchecked() }
         } {
             pub fn side_to_move(&self) -> Color;
             pub fn color_bb(&self, color: Color) -> Bitboard;
@@ -41,30 +35,45 @@ impl Position {
             pub fn en_passant_square(&self) -> Option<Square>;
             pub fn plies_since_pawn_or_capture(&self) -> u16;
             pub fn last_move(&self) -> Option<ChessMove>;
+            pub fn piece_type_captured(&self) -> Option<PieceType>;
+            pub fn piece_type_captured_by(&self, mov: ChessMove) -> Option<PieceType>;
             pub fn in_check(&self) -> bool;
             pub fn zobrist_hash(&self) -> u64;
             pub fn at(&self, sq: Square) -> Option<PieceType>;
             pub fn color_at(&self, sq: Square) -> Option<Color>;
             pub fn king_square(&self, color: Color) -> Square;
-            pub fn captured(&self, mov: ChessMove) -> Option<PieceType>;
             pub fn fen(&self) -> String;
             pub fn display(&self);
             pub fn attacks(&self, color: Color, occ: Bitboard) -> Bitboard;
             pub fn attackers(&self, sq: Square) -> Bitboard;
             pub fn pinned(&self) -> (Bitboard, Bitboard);
-            pub fn legal_moves(&self) -> ArrayVec<ChessMove, 256>;
         }
     }
 
+    pub fn state(&self, n_states_ago: usize) -> Option<&PosState> {
+        if n_states_ago >= self.0.len() {
+            return None;
+        }
+
+        let state: &PosState = unsafe { self.0.get_unchecked(self.0.len() - n_states_ago - 1) };
+        Some(state)
+    }
+
+    pub fn legal_moves(&self) -> ArrayVec<ChessMove, 256> {
+        debug_assert!(!self.0.is_empty());
+        unsafe { self.0.last().unwrap_unchecked().legal_moves() }
+    }
+
     pub fn make_move(&mut self, mov: ChessMove) {
-        let mut new_state: PosState = self.states.last().unwrap().clone();
+        debug_assert!(!self.0.is_empty());
+        let mut new_state: PosState = unsafe { self.0.last().unwrap_unchecked().clone() };
         new_state.make_move(mov);
-        self.states.push(new_state);
+        self.0.push(new_state);
     }
 
     pub fn undo_move(&mut self) {
-        if self.states.len() > 1 {
-            self.states.pop();
+        if self.0.len() > 1 {
+            self.0.truncate(self.0.len() - 1)
         }
     }
 
@@ -101,10 +110,10 @@ impl Position {
     }
 
     pub fn is_repetition(&self) -> bool {
-        debug_assert!(!self.states.is_empty());
-        let current_hash: u64 = unsafe { self.states.last().unwrap_unchecked().zobrist_hash() };
+        debug_assert!(!self.0.is_empty());
+        let current_hash: u64 = unsafe { self.0.last().unwrap_unchecked().zobrist_hash() };
 
-        self.states
+        self.0
             .iter()
             .rev()
             .skip(2)

@@ -10,7 +10,7 @@ pub fn get_scored_moves(
     for &mov in moves {
         let score: i32 = if let Some(promo_pt) = mov.promotion() {
             10_000 * if promo_pt == PieceType::Queen { 1 } else { -1 }
-        } else if let Some(pt_captured) = pos.captured(mov) {
+        } else if let Some(pt_captured) = pos.piece_type_captured_by(mov) {
             // MVVLVA
 
             let pt_moving_value: i32 = match mov.piece_type() {
@@ -23,13 +23,17 @@ pub fn get_scored_moves(
             0
         };
 
-        scored_moves.push((mov, score));
+        unsafe {
+            scored_moves.push_unchecked((mov, score));
+        }
     }
 
     scored_moves
 }
 
-pub fn remove_best_move(scored_moves: &mut ArrayVec<(ChessMove, i32), 256>) -> Option<ChessMove> {
+pub fn remove_best_move<T: PartialOrd>(
+    scored_moves: &mut ArrayVec<(ChessMove, T), 256>,
+) -> Option<(ChessMove, T)> {
     if scored_moves.is_empty() {
         return None;
     }
@@ -42,5 +46,5 @@ pub fn remove_best_move(scored_moves: &mut ArrayVec<(ChessMove, i32), 256>) -> O
         }
     }
 
-    Some(scored_moves.swap_remove(best_idx).0)
+    Some(scored_moves.swap_remove(best_idx))
 }
