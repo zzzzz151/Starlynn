@@ -1,4 +1,6 @@
-use super::search::*;
+use super::limits::SearchLimits;
+use super::search::search;
+use super::thread_data::ThreadData;
 use crate::chess::position::Position;
 use std::num::NonZeroU32;
 use std::time::{Duration, Instant};
@@ -61,14 +63,7 @@ const BENCH_FENS: [&str; 52] = [
 ];
 
 pub fn bench(depth: NonZeroU32) {
-    let mut limits = SearchLimits {
-        start_time: Instant::now(),
-        max_depth: Some(depth),
-        max_nodes: None,
-        max_duration: None,
-        max_duration_hit: false,
-    };
-
+    let mut limits = SearchLimits::new(&Instant::now(), Some(depth), None, None);
     let mut td = ThreadData::new();
 
     let mut total_nodes: u64 = 0;

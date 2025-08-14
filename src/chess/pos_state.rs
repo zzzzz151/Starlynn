@@ -241,6 +241,15 @@ impl PosState {
         }
     }
 
+    pub fn is_capture(&self, mov: ChessMove) -> bool {
+        // En passant
+        if mov.piece_type() == PieceType::Pawn && Some(mov.dst()) == self.en_passant_square {
+            return true;
+        }
+
+        self.occupancy().contains(mov.dst())
+    }
+
     fn toggle_piece(&mut self, color: Color, pt: PieceType, sq: Square) {
         self.color_bbs[color] ^= Bitboard::from(sq);
         self.piece_bbs[pt] ^= Bitboard::from(sq);
@@ -434,15 +443,10 @@ impl PosState {
         debug_assert!(!self.them().contains(src));
         debug_assert!(!self.us().contains(dst));
 
-        self.toggle_piece(self.stm, pt_moving, src);
-
+        self.pt_captured = self.piece_type_captured_by(mov);
         let is_en_passant = pt_moving == PieceType::Pawn && Some(dst) == self.en_passant_square;
 
-        self.pt_captured = if is_en_passant {
-            Some(PieceType::Pawn)
-        } else {
-            self.at(dst)
-        };
+        self.toggle_piece(self.stm, pt_moving, src);
 
         if let Some(pt_captured) = self.pt_captured {
             let captured_piece_sq: Square = if is_en_passant {

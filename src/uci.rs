@@ -1,4 +1,3 @@
-use crate::nn::{accumulator::BothAccumulators, moves_map::map_moves_1880, value_policy_heads::*};
 use std::fs::File;
 use std::io::Write;
 use std::mem::size_of;
@@ -14,9 +13,13 @@ use crate::chess::{
     util::FEN_START,
 };
 
+use crate::nn::{accumulator::BothAccumulators, moves_map::map_moves_1880, value_policy_heads::*};
+
 use crate::search::{
     bench::{DEFAULT_BENCH_DEPTH, bench},
-    search::*,
+    limits::SearchLimits,
+    search::{remove_best_move, search},
+    thread_data::ThreadData,
 };
 
 const OVERHEAD_MS: u64 = 20;
@@ -87,7 +90,7 @@ pub fn run_command(command: &str, td: &mut ThreadData) {
             let mut both_accs = BothAccumulators::from(&td.pos);
 
             let mut policy =
-                get_policy_logits(&mut both_accs, td.pos.side_to_move(), &td.pos.legal_moves());
+                get_policy_logits::<false>(&mut both_accs, &td.pos, &td.pos.legal_moves());
 
             softmax(&mut policy);
 
@@ -159,13 +162,7 @@ fn uci_position(tokens: &Vec<&str>, pos: &mut Position) {
 }
 
 fn uci_go(tokens: &[&str], td: &mut ThreadData) {
-    let mut limits = SearchLimits {
-        start_time: Instant::now(),
-        max_depth: None,
-        max_nodes: None,
-        max_duration: None,
-        max_duration_hit: false,
-    };
+    let mut limits = SearchLimits::new(&Instant::now(), None, None, None);
 
     for pair in tokens[1..].chunks(2) {
         if let &[token1, token2] = pair {
