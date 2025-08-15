@@ -10,7 +10,7 @@ use super::types::{File, Rank, Square};
 
 #[rustfmt::skip]
 #[derive(
-    Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd,
+    Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd,
     BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign,
     Not, Shl, ShlAssign, Shr, ShrAssign
 )]

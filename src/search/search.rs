@@ -1,6 +1,8 @@
 use super::limits::SearchLimits;
 use super::params::*;
 use super::thread_data::{AccumulatorsStackExt, ThreadData};
+use super::tt::TT;
+use super::tt_entry::{Bound, TTEntry};
 use crate::chess::{chess_move::ChessMove, position::Position};
 use arrayvec::ArrayVec;
 
@@ -13,6 +15,7 @@ use crate::nn::{
 pub fn search(
     limits: &mut SearchLimits,
     td: &mut ThreadData,
+    tt: &mut TT,
     print_info: bool,
 ) -> (Option<ChessMove>, u64) {
     limits.max_duration_hit = false;
@@ -35,7 +38,7 @@ pub fn search(
         td.root_depth = depth;
         td.sel_depth = 0;
 
-        let score: i32 = negamax(limits, td, depth, 0, -INF, INF, 0);
+        let score: i32 = negamax(limits, td, tt, depth, 0, -INF, INF, 0);
 
         if limits.max_duration_hit {
             break;
@@ -79,9 +82,11 @@ pub fn search(
     (best_move, td.nodes)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn negamax(
     limits: &mut SearchLimits,
     td: &mut ThreadData,
+    tt: &mut TT,
     depth: i32,
     ply: u32,
     mut alpha: i32,
@@ -92,7 +97,7 @@ fn negamax(
     debug_assert!(alpha < beta);
 
     if depth <= 0 {
-        return q_search(limits, td, ply, alpha, beta, accs_idx);
+        return q_search(limits, td, tt, ply, alpha, beta, accs_idx);
     }
 
     if limits.update_max_duration_hit(ply == 0, td.root_depth, td.nodes) {
@@ -105,6 +110,25 @@ fn negamax(
         return terminal_score;
     }
 
+    debug_assert!(!legal_moves.is_empty());
+
+    let tt_idx: usize = tt.get_index(td.pos.zobrist_hash());
+    let tt_entry: TTEntry = tt[tt_idx];
+
+    // TT cutoff
+    if ply > 0
+        && let Some((tt_depth, tt_score, tt_bound)) = tt_entry.get(td.pos.zobrist_hash(), ply)
+        && tt_depth >= depth
+    {
+        #[allow(clippy::collapsible_if)]
+        if tt_bound == Bound::Exact
+            || (tt_bound == Bound::Upper && tt_score <= alpha)
+            || (tt_bound == Bound::Lower && tt_score >= beta)
+        {
+            return tt_score;
+        }
+    }
+
     let accs: &mut BothAccumulators = td.accs_stack.updated_accs(&td.pos, accs_idx);
 
     if ply as i32 >= MAX_DEPTH {
@@ -113,11 +137,21 @@ fn negamax(
 
     let mut scored_moves = get_policy_logits::<false>(accs, &td.pos, &legal_moves);
     let mut best_score: i32 = -INF;
+    let mut bound = Bound::Upper;
 
     while let Some((mov, _)) = remove_best_move(&mut scored_moves) {
         td.make_move(mov, ply, accs_idx);
 
-        let score: i32 = -negamax(limits, td, depth - 1, ply + 1, -beta, -alpha, accs_idx + 1);
+        let score: i32 = -negamax(
+            limits,
+            td,
+            tt,
+            depth - 1,
+            ply + 1,
+            -beta,
+            -alpha,
+            accs_idx + 1,
+        );
 
         td.pos.undo_move();
 
@@ -133,6 +167,7 @@ fn negamax(
         }
 
         alpha = score;
+        bound = Bound::Exact;
 
         if ply == 0 {
             td.pv_table[0].clear();
@@ -141,11 +176,21 @@ fn negamax(
 
         // Fail high?
         if score >= beta {
+            bound = Bound::Lower;
             break;
         }
     }
 
     debug_assert!(best_score.abs() < INF);
+
+    tt[tt_idx].update(
+        td.pos.zobrist_hash(),
+        depth as u8,
+        best_score as i16,
+        ply,
+        bound,
+    );
+
     best_score
 }
 
@@ -153,6 +198,7 @@ fn negamax(
 fn q_search(
     limits: &mut SearchLimits,
     td: &mut ThreadData,
+    _tt: &mut TT,
     ply: u32,
     mut alpha: i32,
     beta: i32,
@@ -172,6 +218,8 @@ fn q_search(
         return terminal_score;
     }
 
+    debug_assert!(!legal_moves.is_empty());
+
     let accs: &mut BothAccumulators = td.accs_stack.updated_accs(&td.pos, accs_idx);
     let eval: i32 = value_eval(accs, td.pos.side_to_move());
 
@@ -187,7 +235,7 @@ fn q_search(
     while let Some((mov, _)) = remove_best_move(&mut scored_moves) {
         td.make_move(mov, ply, accs_idx);
 
-        let score: i32 = -q_search(limits, td, ply + 1, -beta, -alpha, accs_idx + 1);
+        let score: i32 = -q_search(limits, td, _tt, ply + 1, -beta, -alpha, accs_idx + 1);
 
         td.pos.undo_move();
 

@@ -5,13 +5,17 @@ mod nn;
 mod search;
 mod uci;
 
-use search::thread_data::ThreadData;
+use search::{thread_data::ThreadData, tt::TT};
+use std::num::NonZeroUsize;
 
 fn main() {
     println!("Starlynn by zzzzz");
 
     let args: Vec<String> = std::env::args().collect();
     let mut td = ThreadData::new();
+
+    let mut tt = TT::new(NonZeroUsize::new(32).unwrap());
+    tt.print_size("info string");
 
     if args.len() > 1 {
         let input: String = args[1..]
@@ -20,7 +24,7 @@ fn main() {
             .collect::<Vec<&str>>()
             .join(" ");
 
-        uci::run_command(&input, &mut td);
+        uci::run_command(&input, &mut td, &mut tt);
         return;
     }
 
@@ -30,7 +34,7 @@ fn main() {
             .read_line(&mut input)
             .expect("Error reading input");
 
-        uci::run_command(&input, &mut td);
+        uci::run_command(&input, &mut td, &mut tt);
         input.clear();
     }
 }
