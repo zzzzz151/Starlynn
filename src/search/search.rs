@@ -87,7 +87,7 @@ fn negamax(
     limits: &mut SearchLimits,
     td: &mut ThreadData,
     tt: &mut TT,
-    depth: i32,
+    mut depth: i32,
     ply: u32,
     mut alpha: i32,
     beta: i32,
@@ -138,6 +138,11 @@ fn negamax(
 
     // No TT move if it isn't legal
     tt_move = tt_move.filter(|tt_mov| legal_moves.contains(tt_mov));
+
+    // IIR (Internal iterative reduction)
+    if depth >= 4 && tt_move.is_none() {
+        depth -= 1;
+    }
 
     let mut moves_seen: usize = 0;
     let mut logits: ArrayVec<(ChessMove, f32), 256> = ArrayVec::new();
