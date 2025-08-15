@@ -28,8 +28,6 @@ pub fn search<const PRINT_INFO: bool>(
     td.pv_table[0].clear();
     td.accs_stack[0] = BothAccumulators::from(&td.pos);
 
-    let mut best_move: Option<ChessMove> = None;
-
     for depth in 1..=limits
         .max_depth
         .map(|x| x.get() as i32)
@@ -44,10 +42,8 @@ pub fn search<const PRINT_INFO: bool>(
             break;
         }
 
-        best_move = td.pv_table[0].first().copied();
-        assert!(best_move.is_some(), "Expected move");
-
         let elapsed = limits.start_time.elapsed();
+        let best_move: ChessMove = *(td.pv_table[0].first().expect("Expected move"));
 
         if PRINT_INFO {
             let score_str = if score.abs() < MIN_MATE_SCORE {
@@ -67,7 +63,7 @@ pub fn search<const PRINT_INFO: bool>(
                 td.nodes * 1000 / (elapsed.as_millis().max(1) as u64),
                 elapsed.as_millis(),
                 score_str,
-                unsafe { best_move.unwrap_unchecked() }
+                best_move
             );
         }
 
@@ -79,7 +75,8 @@ pub fn search<const PRINT_INFO: bool>(
         }
     }
 
-    (best_move, td.nodes)
+    let best_move: ChessMove = *(td.pv_table[0].first().expect("Expected move"));
+    (Some(best_move), td.nodes)
 }
 
 #[allow(clippy::too_many_arguments)]
