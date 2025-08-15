@@ -1,4 +1,5 @@
 use super::params::MIN_MATE_SCORE;
+use crate::chess::chess_move::ChessMove;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -17,21 +18,28 @@ pub struct TTEntry {
     depth: u8,
     score: i16,
     bound: Option<Bound>,
+    mov: Option<ChessMove>,
 }
 
-const _: () = assert!(size_of::<TTEntry>() == 8 + 1 + 2 + 1);
+const _: () = assert!(size_of::<TTEntry>() == 8 + 1 + 2 + 1 + 2);
 
 impl TTEntry {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         TTEntry {
             zobrist_hash: 0,
             depth: 0,
             score: 0,
             bound: None,
+            mov: None,
         }
     }
 
-    pub const fn get(&self, zobrist_hash: u64, ply: u32) -> Option<(i32, i32, Bound)> {
+    // Returns depth, score, bound, move
+    pub const fn get(
+        &self,
+        zobrist_hash: u64,
+        ply: u32,
+    ) -> (i32, i32, Option<Bound>, Option<ChessMove>) {
         if let Some(bound) = self.bound
             && zobrist_hash == self.zobrist_hash
         {
@@ -43,9 +51,9 @@ impl TTEntry {
                 score += ply as i32;
             }
 
-            Some((self.depth as i32, score, bound))
+            (self.depth as i32, score, Some(bound), self.mov)
         } else {
-            None
+            (0, 0, None, None)
         }
     }
 
@@ -53,13 +61,14 @@ impl TTEntry {
         self.bound.is_some()
     }
 
-    pub const fn update(
+    pub fn update(
         &mut self,
         new_hash: u64,
         new_depth: u8,
         mut new_score: i16,
         ply: u32,
         new_bound: Bound,
+        new_move: Option<ChessMove>,
     ) {
         if new_score as i32 >= MIN_MATE_SCORE {
             new_score += ply as i16;
@@ -72,6 +81,7 @@ impl TTEntry {
             depth: new_depth,
             score: new_score,
             bound: Some(new_bound),
+            mov: new_move.or(self.mov),
         };
     }
 }

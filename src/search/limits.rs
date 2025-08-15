@@ -10,7 +10,7 @@ pub struct SearchLimits {
 }
 
 impl SearchLimits {
-    pub fn new(
+    pub const fn new(
         start_time: &Instant,
         max_depth: Option<NonZeroU32>,
         max_nodes: Option<NonZeroU64>,

@@ -6,7 +6,7 @@ use arrayvec::ArrayVec;
 use crate::chess::{
     chess_move::ChessMove,
     position::Position,
-    types::{Color, PieceType, Square},
+    types::{Color, Square},
 };
 
 pub fn value_eval(both_accs: &mut BothAccumulators, stm: Color) -> i32 {
@@ -30,18 +30,16 @@ pub fn get_policy_logits<const Q_SEARCH: bool>(
     both_accs: &mut BothAccumulators,
     pos: &Position,
     legal_moves: &ArrayVec<ChessMove, 256>,
+    exclude_move: Option<ChessMove>,
 ) -> ArrayVec<(ChessMove, f32), 256> {
     let mut logits: ArrayVec<(ChessMove, f32), 256> = ArrayVec::new();
 
     for &mov in legal_moves {
-        // In quiescence search, skip quiet moves and underpromotions
-        if Q_SEARCH
-            && match mov.promotion() {
-                Some(PieceType::Queen) => false,
-                None => !pos.is_capture(mov),
-                _ => true,
-            }
-        {
+        if Some(mov) == exclude_move {
+            continue;
+        }
+
+        if Q_SEARCH && !pos.is_noisy_not_underpromotion(mov) {
             continue;
         }
 
@@ -250,7 +248,8 @@ mod tests {
             let pos = Position::try_from(fen).unwrap();
             let mut both_accs = BothAccumulators::from(&pos);
 
-            let logits = get_policy_logits::<false>(&mut both_accs, &pos, &pos.legal_moves());
+            let logits = get_policy_logits::<false>(&mut both_accs, &pos, &pos.legal_moves(), None);
+
             assert_eq!(logits.len(), expected.len());
 
             let mut policy = logits.clone();

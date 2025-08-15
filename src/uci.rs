@@ -1,3 +1,4 @@
+use arrayvec::ArrayVec;
 use std::fs::File;
 use std::io::Write;
 use std::mem::size_of;
@@ -18,7 +19,7 @@ use crate::nn::{accumulator::BothAccumulators, moves_map::map_moves_1880, value_
 use crate::search::{
     bench::{DEFAULT_BENCH_DEPTH, bench},
     limits::SearchLimits,
-    search::{remove_best_move, search},
+    search::search,
     thread_data::ThreadData,
     tt::TT,
 };
@@ -62,7 +63,7 @@ pub fn run_command(command: &str, td: &mut ThreadData, tt: &mut TT) {
             match name {
                 "Hash" | "hash" => {
                     *tt = TT::new(value_str.parse().expect("Error parsing Hash option value"));
-                    tt.print_size("info string");
+                    tt.print_size::<false>();
                 }
                 _ => println!("info string Unknown option {name}"),
             }
@@ -114,17 +115,19 @@ pub fn run_command(command: &str, td: &mut ThreadData, tt: &mut TT) {
         "policy" => {
             let mut both_accs = BothAccumulators::from(&td.pos);
 
-            let mut policy =
-                get_policy_logits::<false>(&mut both_accs, &td.pos, &td.pos.legal_moves());
+            let mut policy: ArrayVec<(ChessMove, f32), 256> =
+                get_policy_logits::<false>(&mut both_accs, &td.pos, &td.pos.legal_moves(), None);
 
             softmax(&mut policy);
 
-            while let Some((mov, move_policy)) = remove_best_move(&mut policy) {
+            policy.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
+
+            for (mov, move_policy) in policy {
                 println!("{mov}: {move_policy:.2}");
             }
         }
         "tt" | "TT" | "hash" | "Hash" | "hashfull" | "Hashfull" => {
-            tt.print_fullness(false);
+            tt.print_fullness::<false>();
         }
         "mapmoves1880" | "map_moves_1880" | "movesmap1880" | "moves_map_1880" => {
             let out_file_name: &str = split_ws.get(1).unwrap_or(&"moves_map_1880.bin");
@@ -219,7 +222,7 @@ fn uci_go(tokens: &[&str], td: &mut ThreadData, tt: &mut TT) {
         };
     }
 
-    let best_move: Option<ChessMove> = search(&mut limits, td, tt, true).0;
+    let best_move: Option<ChessMove> = search::<true>(&mut limits, td, tt).0;
 
     println!(
         "bestmove {}",

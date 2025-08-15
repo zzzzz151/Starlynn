@@ -19,7 +19,7 @@ pub struct BothAccumulators {
 }
 
 impl BothAccumulators {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         BothAccumulators {
             unactivated_accs: [NET.hl_b, NET.hl_b],
             activated_accs: [[0; HALF_HL_SIZE]; 2],
@@ -76,8 +76,8 @@ impl BothAccumulators {
             return;
         }
 
-        debug_assert!(pos_after_move.state(1).is_some());
-        let state_moved: &PosState = unsafe { pos_after_move.state(1).unwrap_unchecked() };
+        debug_assert!(pos_after_move.state::<1>().is_some());
+        let state_moved: &PosState = unsafe { pos_after_move.state::<1>().unwrap_unchecked() };
 
         let stm: Color = state_moved.side_to_move();
         let mut piece_color = stm;
