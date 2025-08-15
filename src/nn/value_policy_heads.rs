@@ -34,7 +34,7 @@ pub fn get_policy_logits<const Q_SEARCH: bool>(
     let mut logits: ArrayVec<(ChessMove, f32), 256> = ArrayVec::new();
 
     for &mov in legal_moves {
-        // In quiescence search, skip non-captures and underpromotions
+        // In quiescence search, skip quiet moves and underpromotions
         if Q_SEARCH
             && match mov.promotion() {
                 Some(PieceType::Queen) => false,

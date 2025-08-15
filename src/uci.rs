@@ -20,11 +20,12 @@ use crate::search::{
     limits::SearchLimits,
     search::{remove_best_move, search},
     thread_data::ThreadData,
+    tt::TT,
 };
 
 const OVERHEAD_MS: u64 = 20;
 
-pub fn run_command(command: &str, td: &mut ThreadData) {
+pub fn run_command(command: &str, td: &mut ThreadData, tt: &mut TT) {
     let command = command.trim();
 
     let split_ws: Vec<&str> = command
@@ -45,10 +46,34 @@ pub fn run_command(command: &str, td: &mut ThreadData) {
             print!("\noption name Threads type spin default 1 min 1 max 1");
             println!("\nuciok");
         }
-        "ucinewgame" => td.pos = Position::try_from(FEN_START).unwrap(),
+        "setoption" => {
+            let name: &str = split_ws
+                .iter()
+                .position(|&token| token == "name" || token == "Name")
+                .and_then(|i| split_ws.get(i + 1))
+                .expect("Couldn't get option name");
+
+            let value_str: &str = split_ws
+                .iter()
+                .position(|&token| token == "value" || token == "Value")
+                .and_then(|i| split_ws.get(i + 1))
+                .expect("Couldn't get option value");
+
+            match name {
+                "Hash" | "hash" => {
+                    *tt = TT::new(value_str.parse().expect("Error parsing Hash option value"));
+                    tt.print_size("info string");
+                }
+                _ => println!("info string Unknown option {name}"),
+            }
+        }
+        "ucinewgame" => {
+            td.pos = Position::try_from(FEN_START).unwrap();
+            tt.reset_keep_size();
+        }
         "isready" => println!("readyok"),
         "position" => uci_position(&split_ws, &mut td.pos),
-        "go" => uci_go(&split_ws, td),
+        "go" => uci_go(&split_ws, td, tt),
         "quit" => std::process::exit(0),
         // Non-UCI commands
         "display" | "d" | "print" | "show" => td.pos.display(),
@@ -95,8 +120,11 @@ pub fn run_command(command: &str, td: &mut ThreadData) {
             softmax(&mut policy);
 
             while let Some((mov, move_policy)) = remove_best_move(&mut policy) {
-                println!("{}: {:.2}", mov, move_policy);
+                println!("{mov}: {move_policy:.2}");
             }
+        }
+        "tt" | "TT" | "hash" | "Hash" | "hashfull" | "Hashfull" => {
+            tt.print_fullness(false);
         }
         "mapmoves1880" | "map_moves_1880" | "movesmap1880" | "moves_map_1880" => {
             let out_file_name: &str = split_ws.get(1).unwrap_or(&"moves_map_1880.bin");
@@ -161,7 +189,7 @@ fn uci_position(tokens: &Vec<&str>, pos: &mut Position) {
     }
 }
 
-fn uci_go(tokens: &[&str], td: &mut ThreadData) {
+fn uci_go(tokens: &[&str], td: &mut ThreadData, tt: &mut TT) {
     let mut limits = SearchLimits::new(&Instant::now(), None, None, None);
 
     for pair in tokens[1..].chunks(2) {
@@ -191,7 +219,7 @@ fn uci_go(tokens: &[&str], td: &mut ThreadData) {
         };
     }
 
-    let best_move: Option<ChessMove> = search(&mut limits, td, true).0;
+    let best_move: Option<ChessMove> = search(&mut limits, td, tt, true).0;
 
     println!(
         "bestmove {}",

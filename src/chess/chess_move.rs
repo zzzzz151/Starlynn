@@ -3,7 +3,7 @@ use std::fmt;
 use std::mem::{size_of, transmute};
 use std::num::NonZeroU16;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ChessMove(NonZeroU16);
 
 const _: () = assert!(size_of::<Option<ChessMove>>() == size_of::<u16>());

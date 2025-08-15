@@ -3,7 +3,7 @@ use std::ops::{Index, IndexMut, Not};
 use strum_macros::{Display, EnumIter, EnumString};
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Display, EnumString, EnumIter)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Display, EnumString, EnumIter)]
 #[strum(serialize_all = "lowercase", ascii_case_insensitive)]
 #[rustfmt::skip]
 pub enum Square {
@@ -18,28 +18,28 @@ pub enum Square {
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, EnumIter)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, EnumIter)]
 #[rustfmt::skip]
 pub enum File {
     A, B, C, D, E, F, G, H
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, EnumIter)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, EnumIter)]
 #[rustfmt::skip]
 pub enum Rank {
     Rank1, Rank2, Rank3, Rank4, Rank5, Rank6, Rank7, Rank8
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[rustfmt::skip]
 pub enum Color {
     White, Black
 }
 
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, EnumIter)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, EnumIter)]
 #[rustfmt::skip]
 pub enum PieceType {
     Pawn, Knight, Bishop, Rook, Queen, King

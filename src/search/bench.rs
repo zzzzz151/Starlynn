@@ -1,11 +1,13 @@
 use super::limits::SearchLimits;
 use super::search::search;
 use super::thread_data::ThreadData;
+use super::tt::TT;
 use crate::chess::position::Position;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 use std::time::{Duration, Instant};
 
 pub const DEFAULT_BENCH_DEPTH: NonZeroU32 = NonZeroU32::new(5).unwrap();
+const BENCH_TT_SIZE_MIB: NonZeroUsize = NonZeroUsize::new(8).unwrap();
 
 const BENCH_FENS: [&str; 52] = [
     "r3k2r/2pb1ppp/2pp1q2/p7/1nP1B3/1P2P3/P2N1PPP/R2QK2R w KQkq a6 0 14",
@@ -66,6 +68,9 @@ pub fn bench(depth: NonZeroU32) {
     let mut limits = SearchLimits::new(&Instant::now(), Some(depth), None, None);
     let mut td = ThreadData::new();
 
+    let mut tt = TT::new(BENCH_TT_SIZE_MIB);
+    tt.print_size("Bench");
+
     let mut total_nodes: u64 = 0;
     let mut duration = Duration::new(0, 0);
 
@@ -73,7 +78,7 @@ pub fn bench(depth: NonZeroU32) {
         td.pos = Position::try_from(fen).unwrap();
 
         let start_time = Instant::now();
-        let nodes: u64 = search(&mut limits, &mut td, false).1;
+        let nodes: u64 = search(&mut limits, &mut td, &mut tt, false).1;
 
         duration += start_time.elapsed();
         total_nodes += nodes;
@@ -84,4 +89,6 @@ pub fn bench(depth: NonZeroU32) {
         total_nodes,
         total_nodes * 1000 / (duration.as_millis().max(1) as u64)
     );
+
+    tt.print_fullness(true);
 }
