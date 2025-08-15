@@ -15,7 +15,7 @@ fn main() {
     let mut td = ThreadData::new();
 
     let mut tt = TT::new(NonZeroUsize::new(32).unwrap());
-    tt.print_size("info string");
+    tt.print_size::<false>();
 
     if args.len() > 1 {
         let input: String = args[1..]

@@ -69,7 +69,7 @@ pub fn bench(depth: NonZeroU32) {
     let mut td = ThreadData::new();
 
     let mut tt = TT::new(BENCH_TT_SIZE_MIB);
-    tt.print_size("Bench");
+    tt.print_size::<true>();
 
     let mut total_nodes: u64 = 0;
     let mut duration = Duration::new(0, 0);
@@ -78,7 +78,7 @@ pub fn bench(depth: NonZeroU32) {
         td.pos = Position::try_from(fen).unwrap();
 
         let start_time = Instant::now();
-        let nodes: u64 = search(&mut limits, &mut td, &mut tt, false).1;
+        let nodes: u64 = search::<false>(&mut limits, &mut td, &mut tt).1;
 
         duration += start_time.elapsed();
         total_nodes += nodes;
@@ -90,5 +90,5 @@ pub fn bench(depth: NonZeroU32) {
         total_nodes * 1000 / (duration.as_millis().max(1) as u64)
     );
 
-    tt.print_fullness(true);
+    tt.print_fullness::<true>();
 }

@@ -13,12 +13,6 @@ impl TT {
         TT(vec![TTEntry::new(); tt_len])
     }
 
-    pub fn print_size(&self, prefix: &str) {
-        let bytes: usize = size_of::<TTEntry>() * self.0.len();
-        let mib: usize = (bytes as f64 / 1024.0 / 1024.0).round() as usize;
-        println!("{} TT size {mib} MiB ({} entries)", prefix, self.0.len());
-    }
-
     pub fn reset_keep_size(&mut self) {
         for entry in &mut self.0 {
             *entry = TTEntry::new();
@@ -30,13 +24,24 @@ impl TT {
         (mul >> 64) as usize
     }
 
-    pub fn print_fullness(&self, is_bench: bool) {
+    pub fn print_size<const IS_BENCH: bool>(&self) {
+        let bytes: usize = size_of::<TTEntry>() * self.0.len();
+        let mib: usize = (bytes as f64 / 1024.0 / 1024.0).round() as usize;
+
+        println!(
+            "{} TT size {mib} MiB ({} entries)",
+            ["info string", "Bench"][IS_BENCH as usize],
+            self.0.len()
+        );
+    }
+
+    pub fn print_fullness<const IS_BENCH: bool>(&self) {
         let num_occupied: usize = self.0.iter().filter(|entry| entry.has_entry()).count();
         let percentage: f64 = num_occupied as f64 * 100.0 / (self.0.len() as f64);
 
         println!(
             "{}TT fullness: {num_occupied}/{} ({:.1}%)",
-            if is_bench { "Bench " } else { "" },
+            ["", "Bench "][IS_BENCH as usize],
             self.0.len(),
             percentage
         );

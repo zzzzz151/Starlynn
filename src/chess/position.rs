@@ -43,20 +43,22 @@ impl Position {
             pub fn color_at(&self, sq: Square) -> Option<Color>;
             pub fn king_square(&self, color: Color) -> Square;
             pub fn is_capture(&self, mov: ChessMove) -> bool;
+            pub fn is_noisy_not_underpromotion(&self, mov: ChessMove) -> bool;
             pub fn fen(&self) -> String;
             pub fn display(&self);
+            pub fn is_insufficient_material(&self) -> bool;
             pub fn attacks(&self, color: Color, occ: Bitboard) -> Bitboard;
             pub fn attackers(&self, sq: Square) -> Bitboard;
             pub fn pinned(&self) -> (Bitboard, Bitboard);
         }
     }
 
-    pub fn state(&self, n_states_ago: usize) -> Option<&PosState> {
-        if n_states_ago >= self.0.len() {
+    pub fn state<const N_STATES_AGO: usize>(&self) -> Option<&PosState> {
+        if N_STATES_AGO >= self.0.len() {
             return None;
         }
 
-        let state: &PosState = unsafe { self.0.get_unchecked(self.0.len() - n_states_ago - 1) };
+        let state: &PosState = unsafe { self.0.get_unchecked(self.0.len() - N_STATES_AGO - 1) };
         Some(state)
     }
 
@@ -76,38 +78,6 @@ impl Position {
         if self.0.len() > 1 {
             self.0.truncate(self.0.len() - 1)
         }
-    }
-
-    pub fn is_insufficient_material(&self) -> bool {
-        let num_pieces = self.occupancy().count();
-
-        // KvK
-        if num_pieces == 2 {
-            return true;
-        }
-
-        let num_knights = self.piece_type_bb(PieceType::Knight).count();
-        let num_bishops = self.piece_type_bb(PieceType::Bishop).count();
-
-        // KvN or KvB
-        if num_pieces == 3 && (num_knights == 1 || num_bishops == 1) {
-            return true;
-        }
-
-        // KvNN or NvN or BvB or NvB
-        if num_pieces == 4 {
-            if num_knights == 2 {
-                return true;
-            }
-
-            if self.us().count() == 2
-                && (num_bishops == 2 || (num_knights == 1 && num_bishops == 1))
-            {
-                return true;
-            }
-        }
-
-        false
     }
 
     pub fn is_repetition(&self) -> bool {

@@ -250,6 +250,14 @@ impl PosState {
         self.occupancy().contains(mov.dst())
     }
 
+    pub fn is_noisy_not_underpromotion(&self, mov: ChessMove) -> bool {
+        match mov.promotion() {
+            Some(PieceType::Queen) => true,
+            None => self.is_capture(mov),
+            _ => false,
+        }
+    }
+
     fn toggle_piece(&mut self, color: Color, pt: PieceType, sq: Square) {
         self.color_bbs[color] ^= Bitboard::from(sq);
         self.piece_bbs[pt] ^= Bitboard::from(sq);
@@ -346,6 +354,38 @@ impl PosState {
         });
 
         println!("\n{}", self.fen());
+    }
+
+    pub fn is_insufficient_material(&self) -> bool {
+        let num_pieces = self.occupancy().count();
+
+        // KvK
+        if num_pieces == 2 {
+            return true;
+        }
+
+        let num_knights = self.piece_bbs[PieceType::Knight].count();
+        let num_bishops = self.piece_bbs[PieceType::Bishop].count();
+
+        // KvN or KvB
+        if num_pieces == 3 && (num_knights == 1 || num_bishops == 1) {
+            return true;
+        }
+
+        // KvNN or NvN or BvB or NvB
+        if num_pieces == 4 {
+            if num_knights == 2 {
+                return true;
+            }
+
+            if self.us().count() == 2
+                && (num_bishops == 2 || (num_knights == 1 && num_bishops == 1))
+            {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub fn attacks(&self, color: Color, occ: Bitboard) -> Bitboard {

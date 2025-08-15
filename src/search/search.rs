@@ -5,6 +5,7 @@ use super::tt::TT;
 use super::tt_entry::{Bound, TTEntry};
 use crate::chess::{chess_move::ChessMove, position::Position};
 use arrayvec::ArrayVec;
+use std::cmp::Ordering;
 
 use crate::nn::{
     accumulator::BothAccumulators,
@@ -12,11 +13,10 @@ use crate::nn::{
 };
 
 // Returns best move and nodes
-pub fn search(
+pub fn search<const PRINT_INFO: bool>(
     limits: &mut SearchLimits,
     td: &mut ThreadData,
     tt: &mut TT,
-    print_info: bool,
 ) -> (Option<ChessMove>, u64) {
     limits.max_duration_hit = false;
 
@@ -49,7 +49,7 @@ pub fn search(
 
         let elapsed = limits.start_time.elapsed();
 
-        if print_info {
+        if PRINT_INFO {
             let score_str = if score.abs() < MIN_MATE_SCORE {
                 format!("cp {score}")
             } else {
@@ -114,10 +114,11 @@ fn negamax(
 
     let tt_idx: usize = tt.get_index(td.pos.zobrist_hash());
     let tt_entry: TTEntry = tt[tt_idx];
+    let (tt_depth, tt_score, tt_bound, mut tt_move) = tt_entry.get(td.pos.zobrist_hash(), ply);
 
     // TT cutoff
     if ply > 0
-        && let Some((tt_depth, tt_score, tt_bound)) = tt_entry.get(td.pos.zobrist_hash(), ply)
+        && let Some(tt_bound) = tt_bound
         && tt_depth >= depth
     {
         #[allow(clippy::collapsible_if)]
@@ -129,17 +130,29 @@ fn negamax(
         }
     }
 
-    let accs: &mut BothAccumulators = td.accs_stack.updated_accs(&td.pos, accs_idx);
+    let both_accs: &mut BothAccumulators = td.accs_stack.updated_accs(&td.pos, accs_idx);
 
     if ply as i32 >= MAX_DEPTH {
-        return value_eval(accs, td.pos.side_to_move());
+        return value_eval(both_accs, td.pos.side_to_move());
     }
 
-    let mut scored_moves = get_policy_logits::<false>(accs, &td.pos, &legal_moves);
+    // No TT move if it isn't legal
+    tt_move = tt_move.filter(|tt_mov| legal_moves.contains(tt_mov));
+
+    let mut moves_seen: usize = 0;
+    let mut logits: ArrayVec<(ChessMove, f32), 256> = ArrayVec::new();
     let mut best_score: i32 = -INF;
     let mut bound = Bound::Upper;
+    let mut best_move: Option<ChessMove> = None;
 
-    while let Some((mov, _)) = remove_best_move(&mut scored_moves) {
+    while let Some(mov) = next_best_move::<false>(
+        &td.pos,
+        &legal_moves,
+        &mut moves_seen,
+        tt_move,
+        td.accs_stack.updated_accs(&td.pos, accs_idx),
+        &mut logits,
+    ) {
         td.make_move(mov, ply, accs_idx);
 
         let score: i32 = -negamax(
@@ -168,6 +181,7 @@ fn negamax(
 
         alpha = score;
         bound = Bound::Exact;
+        best_move = Some(mov);
 
         if ply == 0 {
             td.pv_table[0].clear();
@@ -189,6 +203,7 @@ fn negamax(
         best_score as i16,
         ply,
         bound,
+        best_move,
     );
 
     best_score
@@ -198,7 +213,7 @@ fn negamax(
 fn q_search(
     limits: &mut SearchLimits,
     td: &mut ThreadData,
-    _tt: &mut TT,
+    tt: &mut TT,
     ply: u32,
     mut alpha: i32,
     beta: i32,
@@ -220,8 +235,8 @@ fn q_search(
 
     debug_assert!(!legal_moves.is_empty());
 
-    let accs: &mut BothAccumulators = td.accs_stack.updated_accs(&td.pos, accs_idx);
-    let eval: i32 = value_eval(accs, td.pos.side_to_move());
+    let both_accs: &mut BothAccumulators = td.accs_stack.updated_accs(&td.pos, accs_idx);
+    let eval: i32 = value_eval(both_accs, td.pos.side_to_move());
 
     if ply as i32 >= MAX_DEPTH || eval >= beta {
         return eval;
@@ -229,13 +244,30 @@ fn q_search(
 
     alpha = alpha.max(eval);
 
-    let mut scored_moves = get_policy_logits::<true>(accs, &td.pos, &legal_moves);
+    let tt_idx: usize = tt.get_index(td.pos.zobrist_hash());
+    let tt_entry: TTEntry = tt[tt_idx];
+    let (_, _, _, mut tt_move) = tt_entry.get(td.pos.zobrist_hash(), ply);
+
+    // No TT move if it is quiet, underpromotion or illegal
+    tt_move = tt_move.filter(|tt_mov| {
+        td.pos.is_noisy_not_underpromotion(*tt_mov) && legal_moves.contains(tt_mov)
+    });
+
+    let mut moves_seen: usize = 0;
+    let mut logits: ArrayVec<(ChessMove, f32), 256> = ArrayVec::new();
     let mut best_score: i32 = eval;
 
-    while let Some((mov, _)) = remove_best_move(&mut scored_moves) {
+    while let Some(mov) = next_best_move::<true>(
+        &td.pos,
+        &legal_moves,
+        &mut moves_seen,
+        tt_move,
+        td.accs_stack.updated_accs(&td.pos, accs_idx),
+        &mut logits,
+    ) {
         td.make_move(mov, ply, accs_idx);
 
-        let score: i32 = -q_search(limits, td, _tt, ply + 1, -beta, -alpha, accs_idx + 1);
+        let score: i32 = -q_search(limits, td, tt, ply + 1, -beta, -alpha, accs_idx + 1);
 
         td.pos.undo_move();
 
@@ -298,22 +330,39 @@ fn get_terminal_score(
     None
 }
 
-pub fn remove_best_move<T: Copy + PartialOrd>(
-    scored_moves: &mut ArrayVec<(ChessMove, T), 256>,
-) -> Option<(ChessMove, T)> {
-    if scored_moves.is_empty() {
-        return None;
+fn next_best_move<const Q_SEARCH: bool>(
+    pos: &Position,
+    legal_moves: &ArrayVec<ChessMove, 256>,
+    legal_moves_seen: &mut usize,
+    tt_move: Option<ChessMove>,
+    both_accs: &mut BothAccumulators,
+    scored_moves: &mut ArrayVec<(ChessMove, f32), 256>,
+) -> Option<ChessMove> {
+    debug_assert!(!legal_moves.is_empty());
+    debug_assert!(tt_move.is_none() || legal_moves.contains(&tt_move.unwrap()));
+
+    if *legal_moves_seen == 0 && tt_move.is_some() {
+        *legal_moves_seen += 1;
+        return tt_move;
     }
 
-    let mut best_idx: usize = 0;
-
-    for i in 1..scored_moves.len() {
-        let best_score: T = unsafe { scored_moves.get_unchecked(best_idx).1 };
-
-        if scored_moves[i].1 > best_score {
-            best_idx = i;
-        }
+    if *legal_moves_seen == (tt_move.is_some() as usize) {
+        *scored_moves = get_policy_logits::<Q_SEARCH>(both_accs, pos, legal_moves, tt_move);
     }
 
-    Some(scored_moves.swap_remove(best_idx))
+    if let Some((best_idx, _)) =
+        scored_moves
+            .iter()
+            .enumerate()
+            .max_by(|(_, (_, logit1)), (_, (_, logit2))| {
+                let cmp: Option<Ordering> = logit1.partial_cmp(logit2);
+                debug_assert!(cmp.is_some());
+                unsafe { cmp.unwrap_unchecked() }
+            })
+    {
+        *legal_moves_seen += 1;
+        Some(scored_moves.swap_remove(best_idx).0)
+    } else {
+        None
+    }
 }
