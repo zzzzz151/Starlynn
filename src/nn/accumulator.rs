@@ -19,7 +19,7 @@ pub struct BothAccumulators {
 }
 
 impl BothAccumulators {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         BothAccumulators {
             unactivated_accs: [NET.hl_b, NET.hl_b],
             activated_accs: [[0; HALF_HL_SIZE]; 2],

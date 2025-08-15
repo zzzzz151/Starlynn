@@ -24,7 +24,7 @@ pub struct TTEntry {
 const _: () = assert!(size_of::<TTEntry>() == 8 + 1 + 2 + 1 + 2);
 
 impl TTEntry {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         TTEntry {
             zobrist_hash: 0,
             depth: 0,
