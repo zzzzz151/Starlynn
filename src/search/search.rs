@@ -130,7 +130,8 @@ fn negamax(
     let both_accs: &mut BothAccumulators = td.accs_stack.updated_accs(&td.pos, accs_idx);
 
     if ply as i32 >= MAX_DEPTH {
-        return value_eval(both_accs, td.pos.side_to_move());
+        return value_eval(both_accs, td.pos.side_to_move())
+            .clamp(-MIN_MATE_SCORE + 1, MIN_MATE_SCORE - 1);
     }
 
     // No TT move if it isn't legal
@@ -238,7 +239,9 @@ fn q_search(
     debug_assert!(!legal_moves.is_empty());
 
     let both_accs: &mut BothAccumulators = td.accs_stack.updated_accs(&td.pos, accs_idx);
-    let eval: i32 = value_eval(both_accs, td.pos.side_to_move());
+
+    let eval: i32 =
+        value_eval(both_accs, td.pos.side_to_move()).clamp(-MIN_MATE_SCORE + 1, MIN_MATE_SCORE - 1);
 
     if ply as i32 >= MAX_DEPTH || eval >= beta {
         return eval;
