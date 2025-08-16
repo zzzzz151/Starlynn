@@ -48,8 +48,9 @@ impl Position {
             pub fn display(&self);
             pub fn is_insufficient_material(&self) -> bool;
             pub fn attacks(&self, color: Color, occ: Bitboard) -> Bitboard;
-            pub fn attackers(&self, sq: Square) -> Bitboard;
+            pub fn attackers(&self, sq: Square, occupancy: Bitboard) -> Bitboard;
             pub fn pinned(&self) -> (Bitboard, Bitboard);
+            pub fn see_ge(&self, mov: ChessMove, threshold: i32) -> bool;
         }
     }
 
