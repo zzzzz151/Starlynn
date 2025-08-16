@@ -36,7 +36,7 @@ pub fn search<const PRINT_INFO: bool>(
         td.root_depth = depth;
         td.sel_depth = 0;
 
-        let score: i32 = negamax(limits, td, tt, depth, 0, -INF, INF, 0);
+        let score: i32 = pvs::<true, true>(limits, td, tt, depth, 0, -INF, INF, 0);
 
         if limits.max_duration_hit {
             break;
@@ -79,8 +79,9 @@ pub fn search<const PRINT_INFO: bool>(
     (Some(best_move), td.nodes)
 }
 
+// Principal variation search
 #[allow(clippy::too_many_arguments)]
-fn negamax(
+fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
     limits: &mut SearchLimits,
     td: &mut ThreadData,
     tt: &mut TT,
@@ -90,20 +91,23 @@ fn negamax(
     beta: i32,
     accs_idx: usize,
 ) -> i32 {
+    debug_assert!(IS_ROOT == (ply == 0));
+    debug_assert!(!IS_ROOT || PV_NODE);
     debug_assert!(alpha.abs() <= INF && beta.abs() <= INF);
     debug_assert!(alpha < beta);
+    debug_assert!(PV_NODE || beta - alpha == 1);
 
     if depth <= 0 {
         return q_search(limits, td, tt, ply, alpha, beta, accs_idx);
     }
 
-    if limits.update_max_duration_hit(ply == 0, td.root_depth, td.nodes) {
+    if limits.update_max_duration_hit::<IS_ROOT>(td.root_depth, td.nodes) {
         return 0;
     }
 
     let mut legal_moves: ArrayVec<ChessMove, 256> = ArrayVec::new();
 
-    if let Some(terminal_score) = get_terminal_score(&td.pos, ply, &mut legal_moves) {
+    if let Some(terminal_score) = get_terminal_score::<IS_ROOT>(&td.pos, ply, &mut legal_moves) {
         return terminal_score;
     }
 
@@ -114,7 +118,7 @@ fn negamax(
     let (tt_depth, tt_score, tt_bound, mut tt_move) = tt_entry.get(td.pos.zobrist_hash(), ply);
 
     // TT cutoff
-    if ply > 0
+    if !PV_NODE
         && let Some(tt_bound) = tt_bound
         && tt_depth >= depth
     {
@@ -158,16 +162,33 @@ fn negamax(
     ) {
         td.make_move(mov, ply, accs_idx);
 
-        let score: i32 = -negamax(
-            limits,
-            td,
-            tt,
-            depth - 1,
-            ply + 1,
-            -beta,
-            -alpha,
-            accs_idx + 1,
-        );
+        let mut score: i32 = 0;
+
+        if !PV_NODE || moves_seen > 1 {
+            score = -pvs::<false, false>(
+                limits,
+                td,
+                tt,
+                depth - 1,
+                ply + 1,
+                -alpha - 1,
+                -alpha,
+                accs_idx + 1,
+            );
+        }
+
+        if PV_NODE && (moves_seen == 1 || score > alpha) {
+            score = -pvs::<false, true>(
+                limits,
+                td,
+                tt,
+                depth - 1,
+                ply + 1,
+                -beta,
+                -alpha,
+                accs_idx + 1,
+            );
+        }
 
         td.pos.undo_move();
 
@@ -186,7 +207,7 @@ fn negamax(
         bound = Bound::Exact;
         best_move = Some(mov);
 
-        if ply == 0 {
+        if IS_ROOT {
             td.pv_table[0].clear();
             td.pv_table[0].push(mov);
         }
@@ -226,13 +247,13 @@ fn q_search(
     debug_assert!(alpha.abs() <= INF && beta.abs() <= INF);
     debug_assert!(alpha < beta);
 
-    if limits.update_max_duration_hit(ply == 0, td.root_depth, td.nodes) {
+    if limits.update_max_duration_hit::<false>(td.root_depth, td.nodes) {
         return 0;
     }
 
     let mut legal_moves: ArrayVec<ChessMove, 256> = ArrayVec::new();
 
-    if let Some(terminal_score) = get_terminal_score(&td.pos, ply, &mut legal_moves) {
+    if let Some(terminal_score) = get_terminal_score::<false>(&td.pos, ply, &mut legal_moves) {
         return terminal_score;
     }
 
@@ -299,12 +320,14 @@ fn q_search(
     best_score
 }
 
-fn get_terminal_score(
+fn get_terminal_score<const IS_ROOT: bool>(
     pos: &Position,
     ply: u32,
     legal_moves: &mut ArrayVec<ChessMove, 256>,
 ) -> Option<i32> {
-    if ply == 0 {
+    debug_assert!(IS_ROOT == (ply == 0));
+
+    if IS_ROOT {
         *legal_moves = pos.legal_moves();
         return None;
     }
