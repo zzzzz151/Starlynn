@@ -19,10 +19,23 @@ pub struct ThreadData {
     pub(crate) root_depth: i32,
     pub(crate) sel_depth: u32,
     pub(crate) stack: [StackEntry; MAX_DEPTH as usize + 1],
+    pub(crate) lmr_table: [[i32; 256]; MAX_DEPTH as usize + 1],
 }
 
 impl ThreadData {
     pub fn new() -> Self {
+        let lmr_table = from_fn(|depth| {
+            from_fn(|moves_seen| {
+                if depth == 0 || moves_seen == 0 {
+                    0
+                } else {
+                    let a: f64 = (depth as f64).ln();
+                    let b: f64 = (moves_seen as f64).ln();
+                    (0.8 + a * b * 0.4).round() as i32
+                }
+            })
+        });
+
         ThreadData {
             pos: Position::try_from(FEN_START).unwrap(),
             nodes: 0,
@@ -32,6 +45,7 @@ impl ThreadData {
                 pv: ArrayVec::new(),
                 both_accs: BothAccumulators::new(),
             }),
+            lmr_table,
         }
     }
 
