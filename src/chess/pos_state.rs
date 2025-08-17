@@ -257,11 +257,11 @@ impl PosState {
         self.occupancy().contains(mov.dst())
     }
 
-    pub fn is_noisy_not_underpromotion(&self, mov: ChessMove) -> bool {
+    pub fn is_quiet_or_underpromotion(&self, mov: ChessMove) -> bool {
         match mov.promotion() {
-            Some(PieceType::Queen) => true,
-            None => self.is_capture(mov),
-            _ => false,
+            Some(PieceType::Queen) => false,
+            None => !self.is_capture(mov),
+            _ => true,
         }
     }
 

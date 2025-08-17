@@ -39,7 +39,7 @@ pub fn get_policy_logits<const Q_SEARCH: bool>(
             continue;
         }
 
-        if Q_SEARCH && (!pos.is_noisy_not_underpromotion(mov) || !pos.see_ge(mov, 0)) {
+        if Q_SEARCH && (pos.is_quiet_or_underpromotion(mov) || !pos.see_ge(mov, 0)) {
             continue;
         }
 

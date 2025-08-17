@@ -256,49 +256,33 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
 
     let mut moves_seen: usize = 0;
     let mut logits: ArrayVec<(ChessMove, f32), 256> = ArrayVec::new();
-    let mut is_move_quiet_or_losing: bool = false;
     let mut best_score: i32 = -INF;
     let mut bound = Bound::Upper;
     let mut best_move: Option<ChessMove> = None;
 
-    loop {
-        // LMP (Late move pruning)
-        if !IS_ROOT
-            && best_score > -MIN_MATE_SCORE
-            && is_move_quiet_or_losing
-            && moves_seen as i32 > 3 + depth * depth
-        {
-            break;
-        }
+    while let Some(mov) = next_best_move::<false>(
+        &td.pos,
+        &legal_moves,
+        &mut moves_seen,
+        tt_move,
+        unsafe { &mut td.stack.get_mut_checked_if_debug(accs_idx).both_accs },
+        &mut logits,
+    ) {
+        let is_quiet_or_underpromo: bool = td.pos.is_quiet_or_underpromotion(mov);
+        let is_quiet_or_losing: bool = is_quiet_or_underpromo || !td.pos.see_ge(mov, 0);
 
-        let both_accs: &mut BothAccumulators =
-            unsafe { &mut td.stack.get_mut_checked_if_debug(accs_idx).both_accs };
+        // Move pruning at shallow depths
+        if !IS_ROOT && best_score > -MIN_MATE_SCORE && is_quiet_or_losing {
+            // LMP (Late move pruning)
+            if moves_seen as i32 > 3 + depth * depth {
+                break;
+            }
 
-        let mov: ChessMove = match next_best_move::<false>(
-            &td.pos,
-            &legal_moves,
-            &mut moves_seen,
-            tt_move,
-            both_accs,
-            &mut logits,
-        ) {
-            Some(mov) => mov,
-            None => break,
-        };
-
-        let is_quiet_or_underpromo: bool = !td.pos.is_noisy_not_underpromotion(mov);
-        is_move_quiet_or_losing = is_quiet_or_underpromo || !td.pos.see_ge(mov, 0);
-
-        // SEE pruning
-        if !IS_ROOT
-            && best_score > -MIN_MATE_SCORE
-            && is_move_quiet_or_losing
-            && td.pos.has_nbrq(td.pos.side_to_move())
-            && !td
-                .pos
-                .see_ge(mov, depth * [-100, -50][is_quiet_or_underpromo as usize])
-        {
-            continue;
+            // SEE pruning
+            let threshold: i32 = if is_quiet_or_underpromo { -50 } else { -100 };
+            if td.pos.has_nbrq(td.pos.side_to_move()) && !td.pos.see_ge(mov, depth * threshold) {
+                continue;
+            }
         }
 
         td.make_move(Some(mov), ply, accs_idx);
@@ -307,7 +291,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         let mut do_full_depth_zws: bool = !PV_NODE || moves_seen > 1;
 
         // LMR (Late move reductions)
-        if depth >= 2 && moves_seen > 2 + (IS_ROOT as usize) && is_move_quiet_or_losing {
+        if depth >= 2 && moves_seen > 2 + (IS_ROOT as usize) && is_quiet_or_losing {
             let mut reduced_depth: i32 = depth - 1;
 
             reduced_depth -= unsafe {
@@ -445,7 +429,7 @@ fn q_search(
 
     // No TT move if it is quiet, underpromotion or illegal
     tt_move = tt_move.filter(|tt_mov| {
-        td.pos.is_noisy_not_underpromotion(*tt_mov) && legal_moves.contains(tt_mov)
+        !td.pos.is_quiet_or_underpromotion(*tt_mov) && legal_moves.contains(tt_mov)
     });
 
     let mut moves_seen: usize = 0;

@@ -44,7 +44,7 @@ impl Position {
             pub fn king_square(&self, color: Color) -> Square;
             pub fn has_nbrq(&self, color: Color) -> bool;
             pub fn is_capture(&self, mov: ChessMove) -> bool;
-            pub fn is_noisy_not_underpromotion(&self, mov: ChessMove) -> bool;
+            pub fn is_quiet_or_underpromotion(&self, mov: ChessMove) -> bool;
             pub fn fen(&self) -> String;
             pub fn display(&self);
             pub fn is_insufficient_material(&self) -> bool;
