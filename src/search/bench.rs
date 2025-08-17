@@ -6,7 +6,7 @@ use crate::chess::position::Position;
 use std::num::{NonZeroU32, NonZeroUsize};
 use std::time::{Duration, Instant};
 
-pub const DEFAULT_BENCH_DEPTH: NonZeroU32 = NonZeroU32::new(6).unwrap();
+pub const DEFAULT_BENCH_DEPTH: NonZeroU32 = NonZeroU32::new(9).unwrap();
 const BENCH_TT_SIZE_MIB: NonZeroUsize = NonZeroUsize::new(8).unwrap();
 
 const BENCH_FENS: [&str; 52] = [

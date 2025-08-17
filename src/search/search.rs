@@ -163,11 +163,43 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         unsafe { &mut td.stack.get_mut_checked_if_debug(accs_idx).both_accs },
         &mut logits,
     ) {
+        let is_noisy_not_underpromo: bool = td.pos.is_noisy_not_underpromotion(mov);
         td.make_move(mov, ply, accs_idx);
 
         let mut score: i32 = 0;
+        let mut do_full_depth_zws: bool = !PV_NODE || moves_seen > 1;
 
-        if !PV_NODE || moves_seen > 1 {
+        // LMR (Late move reductions)
+        if depth >= 2 && moves_seen > 2 + (IS_ROOT as usize) && !is_noisy_not_underpromo {
+            let mut reduced_depth: i32 = depth - 1;
+
+            reduced_depth -= unsafe {
+                *td.lmr_table
+                    .get_checked_if_debug(depth as usize)
+                    .get_checked_if_debug(moves_seen)
+            };
+
+            reduced_depth += td.pos.in_check() as i32;
+            reduced_depth += PV_NODE as i32;
+            reduced_depth = reduced_depth.min(depth - 1);
+
+            // Reduced depth, zero window search
+            score = -pvs::<false, false>(
+                limits,
+                td,
+                tt,
+                reduced_depth,
+                ply + 1,
+                -alpha - 1,
+                -alpha,
+                accs_idx + 1,
+            );
+
+            do_full_depth_zws = reduced_depth < depth - 1 && score > alpha;
+        }
+
+        // Full depth, zero window search
+        if do_full_depth_zws {
             score = -pvs::<false, false>(
                 limits,
                 td,
@@ -180,6 +212,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
             );
         }
 
+        // Full depth, full window search
         if PV_NODE && (moves_seen == 1 || score > alpha) {
             score = -pvs::<false, true>(
                 limits,
