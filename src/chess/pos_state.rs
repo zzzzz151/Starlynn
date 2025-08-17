@@ -241,6 +241,13 @@ impl PosState {
         }
     }
 
+    pub fn has_nbrq(&self, color: Color) -> bool {
+        !self.piece_bb(color, PieceType::Knight).is_empty()
+            || !self.piece_bb(color, PieceType::Bishop).is_empty()
+            || !self.piece_bb(color, PieceType::Rook).is_empty()
+            || !self.piece_bb(color, PieceType::Queen).is_empty()
+    }
+
     pub fn is_capture(&self, mov: ChessMove) -> bool {
         // En passant
         if mov.piece_type() == PieceType::Pawn && Some(mov.dst()) == self.en_passant_square {
@@ -568,6 +575,28 @@ impl PosState {
 
         self.checkers = self.attackers(self.king_square(self.stm), self.occupancy()) & self.them();
         debug_assert!(self.checkers.count() <= 2);
+    }
+
+    pub fn make_null_move(&mut self) {
+        assert!(!self.in_check());
+
+        self.stm = !self.stm;
+        self.zobrist_hash ^= ZOBRIST_COLOR;
+
+        // If en passant square active, clear it
+        if let Some(en_passant_square) = self.en_passant_square {
+            self.zobrist_hash ^= ZOBRIST_FILES[en_passant_square.file()];
+            self.en_passant_square = None;
+        }
+
+        self.plies_since_pawn_or_capture += 1;
+
+        if self.stm == Color::White {
+            self.move_counter = self.move_counter.saturating_add(1);
+        }
+
+        self.last_move = None;
+        self.pt_captured = None;
     }
 
     // Static exchange evaluation

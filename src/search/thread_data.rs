@@ -49,8 +49,13 @@ impl ThreadData {
         }
     }
 
-    pub fn make_move(&mut self, mov: ChessMove, ply_before: u32, accs_idx_before: usize) {
-        self.pos.make_move(mov);
+    pub fn make_move(&mut self, mov: Option<ChessMove>, ply_before: u32, accs_idx_before: usize) {
+        if let Some(mov) = mov {
+            self.pos.make_move(mov);
+        } else {
+            self.pos.make_null_move();
+        }
+
         self.nodes += 1;
         self.sel_depth = self.sel_depth.max(ply_before + 1);
 
@@ -60,10 +65,12 @@ impl ThreadData {
                 .pv
                 .clear();
 
-            self.stack
-                .get_mut_checked_if_debug(accs_idx_before + 1)
-                .both_accs
-                .set_not_updated();
+            if mov.is_some() {
+                self.stack
+                    .get_mut_checked_if_debug(accs_idx_before + 1)
+                    .both_accs
+                    .set_not_updated();
+            }
         }
     }
 

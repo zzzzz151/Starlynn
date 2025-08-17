@@ -42,6 +42,7 @@ impl Position {
             pub fn at(&self, sq: Square) -> Option<PieceType>;
             pub fn color_at(&self, sq: Square) -> Option<Color>;
             pub fn king_square(&self, color: Color) -> Square;
+            pub fn has_nbrq(&self, color: Color) -> bool;
             pub fn is_capture(&self, mov: ChessMove) -> bool;
             pub fn is_noisy_not_underpromotion(&self, mov: ChessMove) -> bool;
             pub fn fen(&self) -> String;
@@ -70,6 +71,12 @@ impl Position {
     pub fn make_move(&mut self, mov: ChessMove) {
         let mut new_state: PosState = unsafe { self.0.last().debug_unwrap_unchecked().clone() };
         new_state.make_move(mov);
+        self.0.push(new_state);
+    }
+
+    pub fn make_null_move(&mut self) {
+        let mut new_state: PosState = unsafe { self.0.last().debug_unwrap_unchecked().clone() };
+        new_state.make_null_move();
         self.0.push(new_state);
     }
 
