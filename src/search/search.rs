@@ -4,7 +4,7 @@ use super::thread_data::ThreadData;
 use super::tt::TT;
 use super::tt_entry::{Bound, TTEntry};
 use crate::GetCheckedIfDebug;
-use crate::chess::{chess_move::ChessMove, position::Position};
+use crate::chess::{chess_move::ChessMove, pos_state::PosState, position::Position};
 use crate::nn::{accumulator::BothAccumulators, value_policy_heads::get_policy_logits};
 use arrayvec::ArrayVec;
 use debug_unwraps::DebugUnwrapExt;
@@ -163,14 +163,17 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         unsafe { &mut td.stack.get_mut_checked_if_debug(accs_idx).both_accs },
         &mut logits,
     ) {
-        let is_noisy_not_underpromo: bool = td.pos.is_noisy_not_underpromotion(mov);
         td.make_move(mov, ply, accs_idx);
+        let prev_pos_state: &PosState = unsafe { td.pos.state::<1>().debug_unwrap_unchecked() };
 
         let mut score: i32 = 0;
         let mut do_full_depth_zws: bool = !PV_NODE || moves_seen > 1;
 
         // LMR (Late move reductions)
-        if depth >= 2 && moves_seen > 2 + (IS_ROOT as usize) && !is_noisy_not_underpromo {
+        if depth >= 2
+            && moves_seen > 2 + (IS_ROOT as usize)
+            && (!prev_pos_state.is_noisy_not_underpromotion(mov) || !prev_pos_state.see_ge(mov, 0))
+        {
             let mut reduced_depth: i32 = depth - 1;
 
             reduced_depth -= unsafe {
