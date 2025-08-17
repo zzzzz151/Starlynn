@@ -26,6 +26,8 @@ pub fn search<const PRINT_INFO: bool>(
     td.stack[0].pv.clear();
     td.stack[0].both_accs = BothAccumulators::from(&td.pos);
 
+    let mut score: i32 = 0;
+
     for depth in 1..=limits
         .max_depth
         .map(|x| x.get() as i32)
@@ -34,7 +36,11 @@ pub fn search<const PRINT_INFO: bool>(
         td.root_depth = depth;
         td.sel_depth = 0;
 
-        let score: i32 = pvs::<true, true>(limits, td, tt, depth, 0, -INF, INF, 0);
+        score = if depth <= 4 {
+            pvs::<true, true>(limits, td, tt, depth, 0, -INF, INF, 0)
+        } else {
+            aspiration_windows(limits, td, tt, depth, score)
+        };
 
         if limits.max_duration_hit {
             break;
@@ -81,6 +87,64 @@ pub fn search<const PRINT_INFO: bool>(
 
     let best_move: ChessMove = *(td.stack[0].pv.first().expect("Expected move"));
     (Some(best_move), td.nodes)
+}
+
+fn aspiration_windows(
+    limits: &mut SearchLimits,
+    td: &mut ThreadData,
+    tt: &mut TT,
+    depth: i32,
+    mut score: i32,
+) -> i32 {
+    debug_assert!(depth > 1);
+
+    let mut delta: i32 = 16;
+
+    let (mut alpha, mut beta) = if score <= -MIN_MATE_SCORE {
+        (-INF, -MIN_MATE_SCORE + 1)
+    } else if score >= MIN_MATE_SCORE {
+        (MIN_MATE_SCORE - 1, INF)
+    } else {
+        (score - delta, score + delta)
+    };
+
+    loop {
+        debug_assert!(alpha < MIN_MATE_SCORE);
+        debug_assert!(beta > -MIN_MATE_SCORE);
+
+        if alpha <= -MIN_MATE_SCORE {
+            alpha = -INF;
+        }
+
+        if beta >= MIN_MATE_SCORE {
+            beta = INF;
+        }
+
+        score = pvs::<true, true>(limits, td, tt, depth, 0, alpha, beta, 0);
+
+        if limits.max_duration_hit {
+            return 0;
+        }
+
+        // Fail low?
+        if score <= alpha {
+            alpha -= delta;
+
+            if alpha.abs() < MIN_MATE_SCORE && beta.abs() < MIN_MATE_SCORE {
+                beta = (alpha + beta) / 2;
+            }
+        }
+        // Fail high?
+        else if score >= beta {
+            beta += delta;
+        }
+        // Else, score is exact
+        else {
+            return score;
+        }
+
+        delta += delta / 2;
+    }
 }
 
 // Principal variation search
