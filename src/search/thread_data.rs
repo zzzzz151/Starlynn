@@ -1,16 +1,24 @@
-use super::params::MAX_DEPTH;
-use crate::chess::{chess_move::ChessMove, position::Position, util::FEN_START};
-use crate::nn::accumulator::BothAccumulators;
+use super::params::{MAX_DEPTH, MIN_MATE_SCORE};
+use crate::GetCheckedIfDebug;
+use crate::chess::{chess_move::ChessMove, position::Position, types::Color, util::FEN_START};
+use crate::nn::{accumulator::BothAccumulators, value_policy_heads::value_eval};
 use arrayvec::ArrayVec;
+use debug_unwraps::DebugUnwrapExt;
 use std::array::from_fn;
+
+pub struct StackEntry {
+    pub(crate) pv: ArrayVec<ChessMove, { MAX_DEPTH as usize + 1 }>,
+    pub(crate) both_accs: BothAccumulators,
+    //pub(crate) static_eval: Option<i32>,
+    //pub(crate) logits: ArrayVec<(ChessMove, f32), 256>
+}
 
 pub struct ThreadData {
     pub pos: Position,
     pub(crate) nodes: u64,
     pub(crate) root_depth: i32,
     pub(crate) sel_depth: u32,
-    pub(crate) pv_table: [ArrayVec<ChessMove, { MAX_DEPTH as usize + 1 }>; MAX_DEPTH as usize + 1],
-    pub(crate) accs_stack: [BothAccumulators; MAX_DEPTH as usize + 1],
+    pub(crate) stack: [StackEntry; MAX_DEPTH as usize + 1],
 }
 
 impl ThreadData {
@@ -20,8 +28,10 @@ impl ThreadData {
             nodes: 0,
             root_depth: 1,
             sel_depth: 0,
-            pv_table: from_fn(|_| ArrayVec::new()),
-            accs_stack: from_fn(|_| BothAccumulators::new()),
+            stack: from_fn(|_| StackEntry {
+                pv: ArrayVec::new(),
+                both_accs: BothAccumulators::new(),
+            }),
         }
     }
 
@@ -30,38 +40,50 @@ impl ThreadData {
         self.nodes += 1;
         self.sel_depth = self.sel_depth.max(ply_before + 1);
 
-        debug_assert!(accs_idx_before + 1 < self.accs_stack.len());
-
         unsafe {
-            self.accs_stack
-                .get_unchecked_mut(accs_idx_before + 1)
-                .is_unactivated_updated = false;
+            self.stack
+                .get_mut_checked_if_debug(ply_before as usize + 1)
+                .pv
+                .clear();
+
+            self.stack
+                .get_mut_checked_if_debug(accs_idx_before + 1)
+                .both_accs
+                .set_not_updated();
         }
     }
-}
 
-pub trait AccumulatorsStackExt {
-    fn updated_accs(&mut self, pos: &Position, idx: usize) -> &mut BothAccumulators;
-}
+    pub fn update_both_accs(&mut self, accs_idx: usize) -> &mut BothAccumulators {
+        let (left, right) = self.stack.split_at_mut(accs_idx);
 
-impl<const N: usize> AccumulatorsStackExt for [BothAccumulators; N] {
-    fn updated_accs(
-        &mut self,
-        pos_after_move: &Position,
-        accs_idx: usize,
-    ) -> &mut BothAccumulators {
-        debug_assert!(accs_idx < self.len());
-        let (left, right) = unsafe { self.split_at_mut_unchecked(accs_idx) };
+        let both_accs: &mut BothAccumulators =
+            unsafe { &mut right.first_mut().debug_unwrap_unchecked().both_accs };
 
-        debug_assert!(!right.is_empty());
-        let accs: &mut BothAccumulators = unsafe { right.first_mut().unwrap_unchecked() };
-
-        if !accs.is_unactivated_updated {
-            debug_assert!(!left.is_empty());
-            let prev_accs: &BothAccumulators = unsafe { left.last().unwrap_unchecked() };
-            accs.update(prev_accs, pos_after_move);
+        if let Some(prev_stack_entry) = left.last() {
+            both_accs.update(&prev_stack_entry.both_accs, &self.pos);
         }
 
-        accs
+        both_accs
+    }
+
+    pub fn static_eval(&mut self, accs_idx: usize) -> i32 {
+        let stm: Color = self.pos.side_to_move();
+        let both_accs: &mut BothAccumulators = self.update_both_accs(accs_idx);
+
+        value_eval(both_accs, stm).clamp(-MIN_MATE_SCORE + 1, MIN_MATE_SCORE - 1)
+    }
+
+    pub fn update_pv(&mut self, ply: usize, mov: ChessMove) {
+        unsafe {
+            let child_pv = self.stack.get_checked_if_debug(ply + 1).pv.clone();
+            let pv = &mut self.stack.get_mut_checked_if_debug(ply).pv;
+
+            pv.clear();
+            pv.push_unchecked(mov);
+
+            for next_move in child_pv {
+                pv.push_unchecked(next_move);
+            }
+        }
     }
 }

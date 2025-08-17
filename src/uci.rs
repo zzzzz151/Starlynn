@@ -1,4 +1,3 @@
-use arrayvec::ArrayVec;
 use std::fs::File;
 use std::io::Write;
 use std::mem::size_of;
@@ -115,7 +114,7 @@ pub fn run_command(command: &str, td: &mut ThreadData, tt: &mut TT) {
         "policy" => {
             let mut both_accs = BothAccumulators::from(&td.pos);
 
-            let mut policy: ArrayVec<(ChessMove, f32), 256> =
+            let mut policy =
                 get_policy_logits::<false>(&mut both_accs, &td.pos, &td.pos.legal_moves(), None);
 
             softmax(&mut policy);

@@ -61,19 +61,18 @@ pub fn get_policy_logits<const Q_SEARCH: bool>(
         let move_idx_1882: usize = get_move_idx_1882(move_oriented);
         let mut logit: f32 = 0.0;
 
-        let out_w: &[[f32; HALF_HL_SIZE]; 2] =
-            unsafe { NET.out_w_policy.get_unchecked(move_idx_1882) };
-
-        for (is_nstm, &color) in [pos.side_to_move(), !pos.side_to_move()].iter().enumerate() {
-            for i in 0..HALF_HL_SIZE {
-                logit += hl_activated[color][i] as f32 * out_w[is_nstm][i];
-            }
-        }
-
-        logit /= (FT_Q * FT_Q) as f32;
-        logit += unsafe { *NET.out_b_policy.get_unchecked(move_idx_1882) };
-
         unsafe {
+            let out_w: &[[f32; HALF_HL_SIZE]; 2] = NET.out_w_policy.get_unchecked(move_idx_1882);
+
+            for (is_nstm, &color) in [pos.side_to_move(), !pos.side_to_move()].iter().enumerate() {
+                for i in 0..HALF_HL_SIZE {
+                    logit += hl_activated[color][i] as f32 * out_w[is_nstm][i];
+                }
+            }
+
+            logit /= (FT_Q * FT_Q) as f32;
+            logit += *NET.out_b_policy.get_unchecked(move_idx_1882);
+
             logits.push_unchecked((mov, logit));
         }
     }

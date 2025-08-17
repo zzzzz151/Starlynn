@@ -1,4 +1,5 @@
 use super::params::{FT_Q, HALF_HL_SIZE, NET};
+use debug_unwraps::DebugUnwrapExt;
 use std::mem::transmute;
 use strum::IntoEnumIterator;
 
@@ -14,7 +15,7 @@ use crate::chess::{
 pub struct BothAccumulators {
     unactivated_accs: [[i16; HALF_HL_SIZE]; 2],
     activated_accs: [[i16; HALF_HL_SIZE]; 2],
-    pub is_unactivated_updated: bool,
+    is_unactivated_updated: bool,
     is_activated_updated: bool,
 }
 
@@ -26,6 +27,11 @@ impl BothAccumulators {
             is_unactivated_updated: true,
             is_activated_updated: false,
         }
+    }
+
+    pub fn set_not_updated(&mut self) {
+        self.is_unactivated_updated = false;
+        self.is_activated_updated = false;
     }
 
     // SCReLU activation
@@ -76,14 +82,13 @@ impl BothAccumulators {
             return;
         }
 
-        debug_assert!(pos_after_move.state::<1>().is_some());
-        let state_moved: &PosState = unsafe { pos_after_move.state::<1>().unwrap_unchecked() };
+        let state_moved: &PosState =
+            unsafe { pos_after_move.state::<1>().debug_unwrap_unchecked() };
 
         let stm: Color = state_moved.side_to_move();
         let mut piece_color = stm;
 
-        debug_assert!(pos_after_move.last_move().is_some());
-        let mov: ChessMove = unsafe { pos_after_move.last_move().unwrap_unchecked() };
+        let mov: ChessMove = unsafe { pos_after_move.last_move().debug_unwrap_unchecked() };
 
         let mut src: Square = mov.src();
         let mut dst: Square = mov.dst();

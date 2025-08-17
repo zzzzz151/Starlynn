@@ -8,6 +8,38 @@ mod uci;
 use search::{thread_data::ThreadData, tt::TT};
 use std::num::NonZeroUsize;
 
+pub trait GetCheckedIfDebug<T> {
+    /// Returns a reference to the element at `idx`.
+    /// Bounds are checked in debug but not in release.
+    ///
+    /// # Safety
+    ///
+    /// UB if `idx >= self.len()`
+    unsafe fn get_checked_if_debug(&self, idx: usize) -> &T;
+
+    /// Returns a reference to the element at `idx`.
+    /// Bounds are checked in debug but not in release.
+    ///
+    /// # Safety
+    ///
+    /// UB if `idx >= self.len()`
+    unsafe fn get_mut_checked_if_debug(&mut self, idx: usize) -> &mut T;
+}
+
+impl<T, const N: usize> GetCheckedIfDebug<T> for [T; N] {
+    #[inline]
+    unsafe fn get_checked_if_debug(&self, idx: usize) -> &T {
+        debug_assert!(idx < self.len());
+        unsafe { self.get_unchecked(idx) }
+    }
+
+    #[inline]
+    unsafe fn get_mut_checked_if_debug(&mut self, idx: usize) -> &mut T {
+        debug_assert!(idx < self.len());
+        unsafe { self.get_unchecked_mut(idx) }
+    }
+}
+
 fn main() {
     println!("Starlynn by zzzzz");
 

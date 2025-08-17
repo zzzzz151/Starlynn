@@ -3,6 +3,7 @@ use super::chess_move::ChessMove;
 use super::pos_state::PosState;
 use super::types::{Color, PieceType, Square};
 use arrayvec::ArrayVec;
+use debug_unwraps::DebugUnwrapExt;
 use delegate::delegate;
 
 #[derive(Clone)]
@@ -22,8 +23,7 @@ impl TryFrom<&str> for Position {
 impl Position {
     delegate! {
         to {
-            debug_assert!(!self.0.is_empty());
-            unsafe { self.0.last().unwrap_unchecked() }
+            unsafe { self.0.last().debug_unwrap_unchecked() }
         } {
             pub fn side_to_move(&self) -> Color;
             pub fn color_bb(&self, color: Color) -> Bitboard;
@@ -64,13 +64,11 @@ impl Position {
     }
 
     pub fn legal_moves(&self) -> ArrayVec<ChessMove, 256> {
-        debug_assert!(!self.0.is_empty());
-        unsafe { self.0.last().unwrap_unchecked().legal_moves() }
+        unsafe { self.0.last().debug_unwrap_unchecked().legal_moves() }
     }
 
     pub fn make_move(&mut self, mov: ChessMove) {
-        debug_assert!(!self.0.is_empty());
-        let mut new_state: PosState = unsafe { self.0.last().unwrap_unchecked().clone() };
+        let mut new_state: PosState = unsafe { self.0.last().debug_unwrap_unchecked().clone() };
         new_state.make_move(mov);
         self.0.push(new_state);
     }
@@ -82,8 +80,7 @@ impl Position {
     }
 
     pub fn is_repetition(&self) -> bool {
-        debug_assert!(!self.0.is_empty());
-        let current_hash: u64 = unsafe { self.0.last().unwrap_unchecked().zobrist_hash() };
+        let current_hash: u64 = unsafe { self.0.last().debug_unwrap_unchecked().zobrist_hash() };
 
         self.0
             .iter()

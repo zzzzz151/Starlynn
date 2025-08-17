@@ -1,16 +1,14 @@
 use super::limits::SearchLimits;
 use super::params::*;
-use super::thread_data::{AccumulatorsStackExt, ThreadData};
+use super::thread_data::ThreadData;
 use super::tt::TT;
 use super::tt_entry::{Bound, TTEntry};
+use crate::GetCheckedIfDebug;
 use crate::chess::{chess_move::ChessMove, position::Position};
+use crate::nn::{accumulator::BothAccumulators, value_policy_heads::get_policy_logits};
 use arrayvec::ArrayVec;
+use debug_unwraps::DebugUnwrapExt;
 use std::cmp::Ordering;
-
-use crate::nn::{
-    accumulator::BothAccumulators,
-    value_policy_heads::{get_policy_logits, value_eval},
-};
 
 // Returns best move and nodes
 pub fn search<const PRINT_INFO: bool>(
@@ -25,8 +23,8 @@ pub fn search<const PRINT_INFO: bool>(
     }
 
     td.nodes = 1;
-    td.pv_table[0].clear();
-    td.accs_stack[0] = BothAccumulators::from(&td.pos);
+    td.stack[0].pv.clear();
+    td.stack[0].both_accs = BothAccumulators::from(&td.pos);
 
     for depth in 1..=limits
         .max_depth
@@ -43,7 +41,6 @@ pub fn search<const PRINT_INFO: bool>(
         }
 
         let elapsed = limits.start_time.elapsed();
-        let best_move: ChessMove = *(td.pv_table[0].first().expect("Expected move"));
 
         if PRINT_INFO {
             let score_str = if score.abs() < MIN_MATE_SCORE {
@@ -55,6 +52,13 @@ pub fn search<const PRINT_INFO: bool>(
                 format!("mate {}", full_moves_to_mate * sign)
             };
 
+            let pv_str: String = td.stack[0]
+                .pv
+                .iter()
+                .map(|mov| mov.to_string())
+                .collect::<Vec<_>>()
+                .join(" ");
+
             println!(
                 "info depth {} seldepth {} nodes {} nps {} time {} score {} pv {}",
                 depth,
@@ -63,7 +67,7 @@ pub fn search<const PRINT_INFO: bool>(
                 td.nodes * 1000 / (elapsed.as_millis().max(1) as u64),
                 elapsed.as_millis(),
                 score_str,
-                best_move
+                pv_str
             );
         }
 
@@ -75,7 +79,7 @@ pub fn search<const PRINT_INFO: bool>(
         }
     }
 
-    let best_move: ChessMove = *(td.pv_table[0].first().expect("Expected move"));
+    let best_move: ChessMove = *(td.stack[0].pv.first().expect("Expected move"));
     (Some(best_move), td.nodes)
 }
 
@@ -131,11 +135,10 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         }
     }
 
-    let both_accs: &mut BothAccumulators = td.accs_stack.updated_accs(&td.pos, accs_idx);
+    td.update_both_accs(accs_idx);
 
     if ply as i32 >= MAX_DEPTH {
-        return value_eval(both_accs, td.pos.side_to_move())
-            .clamp(-MIN_MATE_SCORE + 1, MIN_MATE_SCORE - 1);
+        return td.static_eval(accs_idx);
     }
 
     // No TT move if it isn't legal
@@ -157,7 +160,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         &legal_moves,
         &mut moves_seen,
         tt_move,
-        td.accs_stack.updated_accs(&td.pos, accs_idx),
+        unsafe { &mut td.stack.get_mut_checked_if_debug(accs_idx).both_accs },
         &mut logits,
     ) {
         td.make_move(mov, ply, accs_idx);
@@ -207,9 +210,8 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         bound = Bound::Exact;
         best_move = Some(mov);
 
-        if IS_ROOT {
-            td.pv_table[0].clear();
-            td.pv_table[0].push(mov);
+        if PV_NODE {
+            td.update_pv(ply as usize, mov);
         }
 
         // Fail high?
@@ -259,10 +261,7 @@ fn q_search(
 
     debug_assert!(!legal_moves.is_empty());
 
-    let both_accs: &mut BothAccumulators = td.accs_stack.updated_accs(&td.pos, accs_idx);
-
-    let eval: i32 =
-        value_eval(both_accs, td.pos.side_to_move()).clamp(-MIN_MATE_SCORE + 1, MIN_MATE_SCORE - 1);
+    let eval: i32 = td.static_eval(accs_idx);
 
     if ply as i32 >= MAX_DEPTH || eval >= beta {
         return eval;
@@ -288,7 +287,7 @@ fn q_search(
         &legal_moves,
         &mut moves_seen,
         tt_move,
-        td.accs_stack.updated_accs(&td.pos, accs_idx),
+        unsafe { &mut td.stack.get_mut_checked_if_debug(accs_idx).both_accs },
         &mut logits,
     ) {
         td.make_move(mov, ply, accs_idx);
@@ -384,8 +383,7 @@ fn next_best_move<const Q_SEARCH: bool>(
             .enumerate()
             .max_by(|(_, (_, logit1)), (_, (_, logit2))| {
                 let cmp: Option<Ordering> = logit1.partial_cmp(logit2);
-                debug_assert!(cmp.is_some());
-                unsafe { cmp.unwrap_unchecked() }
+                unsafe { cmp.debug_unwrap_unchecked() }
             })
     {
         *legal_moves_seen += 1;
