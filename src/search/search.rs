@@ -146,7 +146,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         let eval: i32 = td.static_eval(accs_idx);
 
         // RFP (Reverse futility pruning)
-        if eval - depth * 75 >= beta {
+        if depth <= 7 && eval - depth * 75 >= beta {
             return (eval + beta) / 2;
         }
 
