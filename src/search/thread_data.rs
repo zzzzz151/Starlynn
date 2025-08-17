@@ -9,7 +9,7 @@ use std::array::from_fn;
 pub struct StackEntry {
     pub(crate) pv: ArrayVec<ChessMove, { MAX_DEPTH as usize + 1 }>,
     pub(crate) both_accs: BothAccumulators,
-    //pub(crate) static_eval: Option<i32>,
+    pub(crate) static_eval: Option<i32>,
     //pub(crate) logits: ArrayVec<(ChessMove, f32), 256>
 }
 
@@ -44,6 +44,7 @@ impl ThreadData {
             stack: from_fn(|_| StackEntry {
                 pv: ArrayVec::new(),
                 both_accs: BothAccumulators::new(),
+                static_eval: None,
             }),
             lmr_table,
         }
@@ -60,17 +61,16 @@ impl ThreadData {
         self.sel_depth = self.sel_depth.max(ply_before + 1);
 
         unsafe {
-            self.stack
-                .get_mut_checked_if_debug(ply_before as usize + 1)
-                .pv
-                .clear();
+            let new_stack_entry: &mut StackEntry =
+                self.stack.get_mut_checked_if_debug(ply_before as usize + 1);
 
-            if mov.is_some() {
-                self.stack
-                    .get_mut_checked_if_debug(accs_idx_before + 1)
-                    .both_accs
-                    .set_not_updated();
-            }
+            new_stack_entry.pv.clear();
+            new_stack_entry.static_eval = None;
+
+            self.stack
+                .get_mut_checked_if_debug(accs_idx_before + 1)
+                .both_accs
+                .set_not_updated();
         }
     }
 
@@ -87,11 +87,21 @@ impl ThreadData {
         both_accs
     }
 
-    pub fn static_eval(&mut self, accs_idx: usize) -> i32 {
-        let stm: Color = self.pos.side_to_move();
-        let both_accs: &mut BothAccumulators = self.update_both_accs(accs_idx);
+    pub fn static_eval(&mut self, ply: usize, accs_idx: usize) -> i32 {
+        let stack_entry: &StackEntry = unsafe { self.stack.get_checked_if_debug(ply) };
 
-        value_eval(both_accs, stm).clamp(-MIN_MATE_SCORE + 1, MIN_MATE_SCORE - 1)
+        if let Some(static_eval) = stack_entry.static_eval {
+            return static_eval;
+        }
+
+        let static_eval: i32 = {
+            let stm: Color = self.pos.side_to_move();
+            let both_accs: &mut BothAccumulators = self.update_both_accs(accs_idx);
+            value_eval(both_accs, stm).clamp(-MIN_MATE_SCORE + 1, MIN_MATE_SCORE - 1)
+        };
+
+        let stack_entry: &mut StackEntry = unsafe { self.stack.get_mut_checked_if_debug(ply) };
+        *(stack_entry.static_eval.insert(static_eval))
     }
 
     pub fn update_pv(&mut self, ply: usize, mov: ChessMove) {

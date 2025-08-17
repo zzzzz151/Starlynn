@@ -25,6 +25,7 @@ pub fn search<const PRINT_INFO: bool>(
     td.nodes = 1;
     td.stack[0].pv.clear();
     td.stack[0].both_accs = BothAccumulators::from(&td.pos);
+    td.stack[0].static_eval = None;
 
     let mut score: i32 = 0;
 
@@ -202,12 +203,12 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
     td.update_both_accs(accs_idx);
 
     if ply as i32 >= MAX_DEPTH {
-        return td.static_eval(accs_idx);
+        return td.static_eval(ply as usize, accs_idx);
     }
 
     // Node pruning
     if !PV_NODE && !td.pos.in_check() && beta.abs() < MIN_MATE_SCORE {
-        let eval: i32 = td.static_eval(accs_idx);
+        let eval: i32 = td.static_eval(ply as usize, accs_idx);
 
         // RFP (Reverse futility pruning)
         if depth <= 7 && eval - depth * 75 >= beta {
@@ -430,7 +431,7 @@ fn q_search(
 
     debug_assert!(!legal_moves.is_empty());
 
-    let eval: i32 = td.static_eval(accs_idx);
+    let eval: i32 = td.static_eval(ply as usize, accs_idx);
 
     if ply as i32 >= MAX_DEPTH || eval >= beta {
         return eval;
