@@ -214,8 +214,20 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
             None => break,
         };
 
-        is_move_quiet_or_losing =
-            !td.pos.is_noisy_not_underpromotion(mov) || !td.pos.see_ge(mov, 0);
+        let is_quiet_or_underpromo: bool = !td.pos.is_noisy_not_underpromotion(mov);
+        is_move_quiet_or_losing = is_quiet_or_underpromo || !td.pos.see_ge(mov, 0);
+
+        // SEE pruning
+        if !IS_ROOT
+            && best_score > -MIN_MATE_SCORE
+            && is_move_quiet_or_losing
+            && td.pos.has_nbrq(td.pos.side_to_move())
+            && !td
+                .pos
+                .see_ge(mov, depth * [-100, -50][is_quiet_or_underpromo as usize])
+        {
+            continue;
+        }
 
         td.make_move(Some(mov), ply, accs_idx);
 
