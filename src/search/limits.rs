@@ -25,10 +25,14 @@ impl SearchLimits {
         }
     }
 
-    pub fn update_max_duration_hit(&mut self, is_root: bool, root_depth: i32, nodes: u64) -> bool {
+    pub fn update_max_duration_hit<const IS_ROOT: bool>(
+        &mut self,
+        root_depth: i32,
+        nodes: u64,
+    ) -> bool {
         if root_depth <= 1 {
             self.max_duration_hit = false;
-        } else if is_root || nodes % 1024 == 0 {
+        } else if IS_ROOT || nodes % 1024 == 0 {
             self.max_duration_hit = self
                 .max_duration
                 .is_some_and(|max_dur| self.start_time.elapsed() >= max_dur);
