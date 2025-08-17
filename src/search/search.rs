@@ -141,41 +141,48 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         return td.static_eval(accs_idx);
     }
 
-    // No TT move if it isn't legal
-    tt_move = tt_move.filter(|tt_mov| legal_moves.contains(tt_mov));
+    // Node pruning
+    if !PV_NODE && !td.pos.in_check() && beta.abs() < MIN_MATE_SCORE {
+        let eval: i32 = td.static_eval(accs_idx);
 
-    // NMP (Null move pruning)
-    if !PV_NODE
-        && !td.pos.in_check()
-        && td.pos.last_move().is_some()
-        && td.pos.has_nbrq(td.pos.side_to_move())
-        && depth >= 3
-        && beta.abs() < MIN_MATE_SCORE
-        && td.static_eval(accs_idx) >= beta
-    {
-        td.make_move(None, ply, accs_idx);
+        // RFP (Reverse futility pruning)
+        if depth <= 7 && eval - depth * 75 >= beta {
+            return (eval + beta) / 2;
+        }
 
-        let score: i32 = -pvs::<false, false>(
-            limits,
-            td,
-            tt,
-            depth - 3 - depth / 3,
-            ply + 1,
-            -beta,
-            -alpha,
-            accs_idx,
-        );
+        // NMP (Null move pruning)
+        if td.pos.last_move().is_some()
+            && td.pos.has_nbrq(td.pos.side_to_move())
+            && depth >= 3
+            && eval >= beta
+        {
+            td.make_move(None, ply, accs_idx);
 
-        td.pos.undo_move();
+            let score: i32 = -pvs::<false, false>(
+                limits,
+                td,
+                tt,
+                depth - 3 - depth / 3,
+                ply + 1,
+                -beta,
+                -alpha,
+                accs_idx,
+            );
 
-        if score >= beta {
-            if score >= MIN_MATE_SCORE {
+            td.pos.undo_move();
+
+            if score >= beta && score >= MIN_MATE_SCORE {
                 return beta;
-            } else {
+            }
+
+            if score >= beta {
                 return score;
             }
         }
     }
+
+    // No TT move if it isn't legal
+    tt_move = tt_move.filter(|tt_mov| legal_moves.contains(tt_mov));
 
     // IIR (Internal iterative reduction)
     if depth >= 4 && tt_move.is_none() {
