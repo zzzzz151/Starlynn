@@ -7,10 +7,12 @@ use super::util::{BETWEEN_EXCLUSIVE, LINE_THRU};
 use arrayvec::ArrayVec;
 use std::mem::transmute;
 
+pub type MovesList = ArrayVec<ChessMove, 256>;
+
 impl PosState {
     #[allow(unsafe_op_in_unsafe_fn)]
-    pub unsafe fn legal_moves(&self) -> ArrayVec<ChessMove, 256> {
-        let mut moves = ArrayVec::<ChessMove, 256>::new();
+    pub unsafe fn legal_moves(&self) -> MovesList {
+        let mut moves = MovesList::new_const();
 
         let stm: Color = self.side_to_move();
         let our_king_sq: Square = self.king_square(stm);
@@ -72,7 +74,7 @@ impl PosState {
 
         // Pawns moves
 
-        let push_pawn_move = |src: Square, dst: Square, movs: &mut ArrayVec<ChessMove, 256>| {
+        let push_pawn_move = |src: Square, dst: Square, movs: &mut MovesList| {
             // Non-promotion
             if !dst.rank().is_backrank() {
                 movs.push_unchecked(ChessMove::new(src, dst, PieceType::Pawn));

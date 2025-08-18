@@ -5,9 +5,12 @@ use arrayvec::ArrayVec;
 
 use crate::chess::{
     chess_move::ChessMove,
+    move_gen::MovesList,
     position::Position,
     types::{Color, Square},
 };
+
+pub type ScoredMoves = ArrayVec<(ChessMove, f32), 256>;
 
 pub fn value_eval(both_accs: &mut BothAccumulators, stm: Color) -> i32 {
     let hl_activated: &[[i16; HALF_HL_SIZE]; 2] = both_accs.activated_accs();
@@ -29,16 +32,17 @@ pub fn value_eval(both_accs: &mut BothAccumulators, stm: Color) -> i32 {
 pub fn get_policy_logits<const Q_SEARCH: bool>(
     both_accs: &mut BothAccumulators,
     pos: &Position,
-    legal_moves: &ArrayVec<ChessMove, 256>,
+    legal_moves: &MovesList,
     exclude_move: Option<ChessMove>,
-) -> ArrayVec<(ChessMove, f32), 256> {
-    let mut logits: ArrayVec<(ChessMove, f32), 256> = ArrayVec::new();
+) -> ScoredMoves {
+    let mut logits: ScoredMoves = ArrayVec::new_const();
 
     for &mov in legal_moves {
         if Some(mov) == exclude_move {
             continue;
         }
 
+        // In quiescence search, skip quiets, underpromotions and moves that lose material
         if Q_SEARCH && (pos.is_quiet_or_underpromotion(mov) || !pos.see_ge(mov, 0)) {
             continue;
         }
@@ -80,7 +84,7 @@ pub fn get_policy_logits<const Q_SEARCH: bool>(
     logits
 }
 
-pub fn softmax(policy_logits: &mut ArrayVec<(ChessMove, f32), 256>) {
+pub fn softmax(policy_logits: &mut ScoredMoves) {
     let mut sum_of_exps = 0.0;
 
     for (_, logit) in policy_logits.iter_mut() {
@@ -248,7 +252,8 @@ mod tests {
             let pos = Position::try_from(fen).unwrap();
             let mut both_accs = BothAccumulators::from(&pos);
 
-            let logits = get_policy_logits::<false>(&mut both_accs, &pos, &pos.legal_moves(), None);
+            let logits: ScoredMoves =
+                get_policy_logits::<false>(&mut both_accs, &pos, &pos.legal_moves(), None);
 
             assert_eq!(logits.len(), expected.len());
 

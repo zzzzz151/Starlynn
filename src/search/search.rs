@@ -1,14 +1,13 @@
 use super::limits::SearchLimits;
+use super::move_picker::MovePicker;
 use super::params::*;
 use super::thread_data::ThreadData;
 use super::tt::TT;
 use super::tt_entry::{Bound, TTEntry};
 use crate::GetCheckedIfDebug;
-use crate::chess::{chess_move::ChessMove, position::Position};
-use crate::nn::{accumulator::BothAccumulators, value_policy_heads::get_policy_logits};
+use crate::chess::{chess_move::ChessMove, move_gen::MovesList, position::Position};
+use crate::nn::accumulator::BothAccumulators;
 use arrayvec::ArrayVec;
-use debug_unwraps::DebugUnwrapExt;
-use std::cmp::Ordering;
 
 // Returns best move and nodes
 pub fn search<const PRINT_INFO: bool>(
@@ -38,7 +37,7 @@ pub fn search<const PRINT_INFO: bool>(
         td.sel_depth = 0;
 
         score = if depth <= 4 {
-            pvs::<true, true>(limits, td, tt, depth, 0, -INF, INF, 0)
+            pvs::<true, true>(limits, td, tt, depth, 0, -INF, INF, 0, None)
         } else {
             aspiration_windows(limits, td, tt, depth, score)
         };
@@ -121,7 +120,7 @@ fn aspiration_windows(
             beta = INF;
         }
 
-        score = pvs::<true, true>(limits, td, tt, depth, 0, alpha, beta, 0);
+        score = pvs::<true, true>(limits, td, tt, depth, 0, alpha, beta, 0, None);
 
         if limits.max_duration_hit {
             return 0;
@@ -159,6 +158,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
     mut alpha: i32,
     beta: i32,
     accs_idx: usize,
+    singular_move: Option<ChessMove>,
 ) -> i32 {
     debug_assert!(IS_ROOT == (ply == 0));
     debug_assert!(!IS_ROOT || PV_NODE);
@@ -166,6 +166,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
     debug_assert!(alpha < beta);
     debug_assert!(PV_NODE || beta - alpha == 1);
 
+    // Dive into quiescence search in leaf nodes
     if depth <= 0 {
         return q_search(limits, td, tt, ply, alpha, beta, accs_idx);
     }
@@ -174,7 +175,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         return 0;
     }
 
-    let mut legal_moves: ArrayVec<ChessMove, 256> = ArrayVec::new();
+    let mut legal_moves: MovesList = ArrayVec::new_const();
 
     if let Some(terminal_score) = get_terminal_score::<IS_ROOT>(&td.pos, ply, &mut legal_moves) {
         return terminal_score;
@@ -182,12 +183,19 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
 
     debug_assert!(!legal_moves.is_empty());
 
+    // If singular search has no move to search
+    if singular_move.is_some() && legal_moves.len() <= 1 {
+        return alpha;
+    }
+
+    // Get TT entry data (if any)
     let tt_idx: usize = tt.get_index(td.pos.zobrist_hash());
     let tt_entry: TTEntry = tt[tt_idx];
     let (tt_depth, tt_score, tt_bound, mut tt_move) = tt_entry.get(td.pos.zobrist_hash(), ply);
 
     // TT cutoff
     if !PV_NODE
+        && singular_move.is_none()
         && let Some(tt_bound) = tt_bound
         && tt_depth >= depth
     {
@@ -202,20 +210,21 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
 
     td.update_both_accs(accs_idx);
 
+    // Max ply?
     if ply as i32 >= MAX_DEPTH {
         return td.static_eval(ply as usize, accs_idx);
     }
 
     // Node pruning
-    if !PV_NODE && !td.pos.in_check() && beta.abs() < MIN_MATE_SCORE {
+    if !PV_NODE && !td.pos.in_check() && beta.abs() < MIN_MATE_SCORE && singular_move.is_none() {
         let eval: i32 = td.static_eval(ply as usize, accs_idx);
 
-        // RFP (Reverse futility pruning)
+        // RFP (reverse futility pruning)
         if depth <= 7 && eval - depth * 75 >= beta {
             return (eval + beta) / 2;
         }
 
-        // NMP (Null move pruning)
+        // NMP (null move pruning)
         if td.pos.last_move().is_some()
             && td.pos.has_nbrq(td.pos.side_to_move())
             && depth >= 3
@@ -223,6 +232,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         {
             td.make_move(None, ply, accs_idx);
 
+            // Null move search
             let score: i32 = -pvs::<false, false>(
                 limits,
                 td,
@@ -232,48 +242,58 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
                 -beta,
                 -alpha,
                 accs_idx,
+                None,
             );
 
             td.pos.undo_move();
 
+            // If null move search failed high with a false mate score,
+            // return beta instead of the false mate score
             if score >= beta && score >= MIN_MATE_SCORE {
                 return beta;
             }
 
+            // If null move search failed high
             if score >= beta {
                 return score;
             }
         }
     }
 
+    // TT move is singular move in singular searches
     // No TT move if it isn't legal
-    tt_move = tt_move.filter(|tt_mov| legal_moves.contains(tt_mov));
+    tt_move = singular_move.or_else(|| tt_move.filter(|tt_mov| legal_moves.contains(tt_mov)));
 
     // IIR (Internal iterative reduction)
     if depth >= 4 && tt_move.is_none() {
         depth -= 1;
     }
 
+    let mut move_picker = MovePicker::new(tt_move);
     let mut moves_seen: usize = 0;
-    let mut logits: ArrayVec<(ChessMove, f32), 256> = ArrayVec::new();
     let mut best_score: i32 = -INF;
     let mut bound = Bound::Upper;
     let mut best_move: Option<ChessMove> = None;
 
-    while let Some(mov) = next_best_move::<false>(
-        &td.pos,
-        &legal_moves,
-        &mut moves_seen,
-        tt_move,
-        unsafe { &mut td.stack.get_mut_checked_if_debug(accs_idx).both_accs },
-        &mut logits,
-    ) {
+    while let Some((mov, _logit)) = {
+        let both_accs: &mut BothAccumulators =
+            unsafe { &mut td.stack.get_mut_checked_if_debug(accs_idx).both_accs };
+
+        move_picker.next::<false>(&td.pos, &legal_moves, both_accs)
+    } {
+        // In singular searches, skip TT move
+        if Some(mov) == singular_move {
+            continue;
+        }
+
+        moves_seen += 1;
+
         let is_quiet_or_underpromo: bool = td.pos.is_quiet_or_underpromotion(mov);
         let is_quiet_or_losing: bool = is_quiet_or_underpromo || !td.pos.see_ge(mov, 0);
 
         // Move pruning at shallow depths
         if !IS_ROOT && best_score > -MIN_MATE_SCORE && is_quiet_or_losing {
-            // LMP (Late move pruning)
+            // LMP (late move pruning)
             if moves_seen as i32 > 3 + depth * depth {
                 continue;
             }
@@ -285,24 +305,59 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
             }
         }
 
+        let mut new_depth: i32 = depth - 1;
+
+        // SE (singular extensions)
+        if !IS_ROOT
+            && Some(mov) == tt_move
+            && singular_move.is_none()
+            && (ply as i32) < td.root_depth * 2
+            && depth >= 6
+            && depth - tt_depth <= 3
+            && tt_score.abs() < MIN_MATE_SCORE
+            && tt_bound.unwrap() != Bound::Upper
+        {
+            let s_beta: i32 = (tt_score - depth).max(-MIN_MATE_SCORE);
+
+            // Singular search (TT move excluded)
+            let s_score: i32 = pvs::<false, false>(
+                limits,
+                td,
+                tt,
+                new_depth / 2,
+                ply,
+                s_beta - 1,
+                s_beta,
+                accs_idx,
+                tt_move,
+            );
+
+            // Extend TT move if it is singular (much better than all other moves)
+            if s_score < s_beta {
+                new_depth += 1;
+            }
+        }
+
         td.make_move(Some(mov), ply, accs_idx);
 
         let mut score: i32 = 0;
         let mut do_full_depth_zws: bool = !PV_NODE || moves_seen > 1;
 
-        // LMR (Late move reductions)
+        // LMR (late move reductions)
         if depth >= 2 && moves_seen > 2 + (IS_ROOT as usize) && is_quiet_or_losing {
-            let mut reduced_depth: i32 = depth - 1;
+            let mut reduced_depth: i32 = new_depth;
 
+            // Base reduction
             reduced_depth -= unsafe {
                 *td.lmr_table
                     .get_checked_if_debug(depth as usize)
                     .get_checked_if_debug(moves_seen)
             };
 
+            // Reduction adjustments
             reduced_depth += PV_NODE as i32;
             reduced_depth += td.pos.in_check() as i32;
-            reduced_depth = reduced_depth.min(depth - 1);
+            reduced_depth = reduced_depth.min(new_depth);
 
             // Reduced depth, zero window search
             score = -pvs::<false, false>(
@@ -314,9 +369,10 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
                 -alpha - 1,
                 -alpha,
                 accs_idx + 1,
+                None,
             );
 
-            do_full_depth_zws = reduced_depth < depth - 1 && score > alpha;
+            do_full_depth_zws = reduced_depth < new_depth && score > alpha;
         }
 
         // Full depth, zero window search
@@ -325,11 +381,12 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
                 limits,
                 td,
                 tt,
-                depth - 1,
+                new_depth,
                 ply + 1,
                 -alpha - 1,
                 -alpha,
                 accs_idx + 1,
+                None,
             );
         }
 
@@ -339,11 +396,12 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
                 limits,
                 td,
                 tt,
-                depth - 1,
+                new_depth,
                 ply + 1,
                 -beta,
                 -alpha,
                 accs_idx + 1,
+                None,
             );
         }
 
@@ -364,6 +422,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         bound = Bound::Exact;
         best_move = Some(mov);
 
+        // Update principal variation
         if PV_NODE {
             td.update_pv(ply as usize, mov);
         }
@@ -377,6 +436,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
 
     debug_assert!(best_score.abs() < INF);
 
+    // Update TT entry
     tt[tt_idx].update(
         td.pos.zobrist_hash(),
         depth as u8,
@@ -407,7 +467,7 @@ fn q_search(
         return 0;
     }
 
-    let mut legal_moves: ArrayVec<ChessMove, 256> = ArrayVec::new();
+    let mut legal_moves: MovesList = ArrayVec::new_const();
 
     if let Some(terminal_score) = get_terminal_score::<false>(&td.pos, ply, &mut legal_moves) {
         return terminal_score;
@@ -417,12 +477,14 @@ fn q_search(
 
     let eval: i32 = td.static_eval(ply as usize, accs_idx);
 
+    // Max ply or static eval fails high?
     if ply as i32 >= MAX_DEPTH || eval >= beta {
         return eval;
     }
 
     alpha = alpha.max(eval);
 
+    // Get TT entry data (if any)
     let tt_idx: usize = tt.get_index(td.pos.zobrist_hash());
     let tt_entry: TTEntry = tt[tt_idx];
     let (_, _, _, mut tt_move) = tt_entry.get(td.pos.zobrist_hash(), ply);
@@ -432,18 +494,15 @@ fn q_search(
         !td.pos.is_quiet_or_underpromotion(*tt_mov) && legal_moves.contains(tt_mov)
     });
 
-    let mut moves_seen: usize = 0;
-    let mut logits: ArrayVec<(ChessMove, f32), 256> = ArrayVec::new();
+    let mut move_picker = MovePicker::new(tt_move);
     let mut best_score: i32 = eval;
 
-    while let Some(mov) = next_best_move::<true>(
-        &td.pos,
-        &legal_moves,
-        &mut moves_seen,
-        tt_move,
-        unsafe { &mut td.stack.get_mut_checked_if_debug(accs_idx).both_accs },
-        &mut logits,
-    ) {
+    while let Some((mov, _logit)) = {
+        let both_accs: &mut BothAccumulators =
+            unsafe { &mut td.stack.get_mut_checked_if_debug(accs_idx).both_accs };
+
+        move_picker.next::<true>(&td.pos, &legal_moves, both_accs)
+    } {
         td.make_move(Some(mov), ply, accs_idx);
 
         let score: i32 = -q_search(limits, td, tt, ply + 1, -beta, -alpha, accs_idx + 1);
@@ -476,7 +535,7 @@ fn q_search(
 fn get_terminal_score<const IS_ROOT: bool>(
     pos: &Position,
     ply: u32,
-    legal_moves: &mut ArrayVec<ChessMove, 256>,
+    legal_moves: &mut MovesList,
 ) -> Option<i32> {
     debug_assert!(IS_ROOT == (ply == 0));
 
@@ -485,6 +544,7 @@ fn get_terminal_score<const IS_ROOT: bool>(
         return None;
     }
 
+    // 50 moves rule
     if pos.plies_since_pawn_or_capture() >= 100 {
         if pos.in_check() && pos.legal_moves().is_empty() {
             return Some(-INF + (ply as i32));
@@ -509,40 +569,4 @@ fn get_terminal_score<const IS_ROOT: bool>(
     }
 
     None
-}
-
-fn next_best_move<const Q_SEARCH: bool>(
-    pos: &Position,
-    legal_moves: &ArrayVec<ChessMove, 256>,
-    legal_moves_seen: &mut usize,
-    tt_move: Option<ChessMove>,
-    both_accs: &mut BothAccumulators,
-    scored_moves: &mut ArrayVec<(ChessMove, f32), 256>,
-) -> Option<ChessMove> {
-    debug_assert!(!legal_moves.is_empty());
-    debug_assert!(tt_move.is_none() || legal_moves.contains(&tt_move.unwrap()));
-
-    if *legal_moves_seen == 0 && tt_move.is_some() {
-        *legal_moves_seen += 1;
-        return tt_move;
-    }
-
-    if *legal_moves_seen == (tt_move.is_some() as usize) {
-        *scored_moves = get_policy_logits::<Q_SEARCH>(both_accs, pos, legal_moves, tt_move);
-    }
-
-    if let Some((best_idx, _)) =
-        scored_moves
-            .iter()
-            .enumerate()
-            .max_by(|(_, (_, logit1)), (_, (_, logit2))| {
-                let cmp: Option<Ordering> = logit1.partial_cmp(logit2);
-                unsafe { cmp.debug_unwrap_unchecked() }
-            })
-    {
-        *legal_moves_seen += 1;
-        Some(scored_moves.swap_remove(best_idx).0)
-    } else {
-        None
-    }
 }
