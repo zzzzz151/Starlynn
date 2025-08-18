@@ -1,10 +1,14 @@
 use std::num::{NonZeroU32, NonZeroU64};
 use std::time::{Duration, Instant};
 
+pub const HARD_TIME_PERCENTAGE: f64 = 0.75;
+pub const SOFT_TIME_PERCENTAGE: f64 = 0.1;
+
 pub struct SearchLimits {
     pub start_time: Instant,
     pub max_depth: Option<NonZeroU32>,
     pub max_nodes: Option<NonZeroU64>,
+    pub max_soft_duration: Option<Duration>,
     pub max_duration: Option<Duration>,
     pub(crate) max_duration_hit: bool,
 }
@@ -14,12 +18,14 @@ impl SearchLimits {
         start_time: &Instant,
         max_depth: Option<NonZeroU32>,
         max_nodes: Option<NonZeroU64>,
+        max_soft_duration: Option<Duration>,
         max_duration: Option<Duration>,
     ) -> Self {
         SearchLimits {
             start_time: *start_time,
             max_depth,
             max_nodes,
+            max_soft_duration,
             max_duration,
             max_duration_hit: false,
         }
