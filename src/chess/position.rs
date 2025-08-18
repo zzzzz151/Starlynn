@@ -1,8 +1,8 @@
 use super::bitboard::Bitboard;
 use super::chess_move::ChessMove;
+use super::move_gen::MovesList;
 use super::pos_state::PosState;
 use super::types::{Color, PieceType, Square};
-use arrayvec::ArrayVec;
 use debug_unwraps::DebugUnwrapExt;
 use delegate::delegate;
 
@@ -64,7 +64,7 @@ impl Position {
         Some(state)
     }
 
-    pub fn legal_moves(&self) -> ArrayVec<ChessMove, 256> {
+    pub fn legal_moves(&self) -> MovesList {
         unsafe { self.0.last().debug_unwrap_unchecked().legal_moves() }
     }
 

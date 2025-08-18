@@ -45,6 +45,7 @@ impl TTEntry {
         {
             let mut score: i32 = self.score as i32;
 
+            // Fix mate scores
             if score >= MIN_MATE_SCORE {
                 score -= ply as i32;
             } else if score <= -MIN_MATE_SCORE {
@@ -70,6 +71,7 @@ impl TTEntry {
         new_bound: Bound,
         new_move: Option<ChessMove>,
     ) {
+        // Fix mate scores
         if new_score as i32 >= MIN_MATE_SCORE {
             new_score += ply as i16;
         } else if new_score as i32 <= -MIN_MATE_SCORE {

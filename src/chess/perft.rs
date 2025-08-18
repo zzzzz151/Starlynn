@@ -1,3 +1,4 @@
+use super::move_gen::MovesList;
 use super::position::Position;
 use std::num::NonZeroU32;
 use std::time::Instant;
@@ -7,7 +8,7 @@ pub fn perft(pos: &mut Position, depth: u32) -> u64 {
         return 1;
     }
 
-    let moves = pos.legal_moves();
+    let moves: MovesList = pos.legal_moves();
 
     if depth == 1 {
         return moves.len() as u64;

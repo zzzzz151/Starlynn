@@ -114,7 +114,7 @@ pub fn run_command(command: &str, td: &mut ThreadData, tt: &mut TT) {
         "policy" => {
             let mut both_accs = BothAccumulators::from(&td.pos);
 
-            let mut policy =
+            let mut policy: ScoredMoves =
                 get_policy_logits::<false>(&mut both_accs, &td.pos, &td.pos.legal_moves(), None);
 
             softmax(&mut policy);

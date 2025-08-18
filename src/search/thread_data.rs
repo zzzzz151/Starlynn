@@ -7,10 +7,10 @@ use debug_unwraps::DebugUnwrapExt;
 use std::array::from_fn;
 
 pub struct StackEntry {
-    pub(crate) pv: ArrayVec<ChessMove, { MAX_DEPTH as usize + 1 }>,
+    pub(crate) pv: ArrayVec<ChessMove, { MAX_DEPTH as usize + 1 }>, // Principal variation
     pub(crate) both_accs: BothAccumulators,
     pub(crate) static_eval: Option<i32>,
-    //pub(crate) logits: ArrayVec<(ChessMove, f32), 256>
+    // pub(crate) scored_moves: Option<ScoredMoves>
 }
 
 pub struct ThreadData {
@@ -24,6 +24,7 @@ pub struct ThreadData {
 
 impl ThreadData {
     pub fn new() -> Self {
+        // Compute base LMR
         let lmr_table = from_fn(|depth| {
             from_fn(|moves_seen| {
                 if depth == 0 || moves_seen == 0 {
@@ -42,7 +43,7 @@ impl ThreadData {
             root_depth: 1,
             sel_depth: 0,
             stack: from_fn(|_| StackEntry {
-                pv: ArrayVec::new(),
+                pv: ArrayVec::new_const(),
                 both_accs: BothAccumulators::new(),
                 static_eval: None,
             }),
@@ -87,6 +88,7 @@ impl ThreadData {
         both_accs
     }
 
+    // Returns static eval if cached, else computes it, caches it, and returns it
     pub fn static_eval(&mut self, ply: usize, accs_idx: usize) -> i32 {
         let stack_entry: &StackEntry = unsafe { self.stack.get_checked_if_debug(ply) };
 
@@ -104,6 +106,7 @@ impl ThreadData {
         *(stack_entry.static_eval.insert(static_eval))
     }
 
+    // Update principal variation
     pub fn update_pv(&mut self, ply: usize, mov: ChessMove) {
         unsafe {
             let child_pv = self.stack.get_checked_if_debug(ply + 1).pv.clone();
