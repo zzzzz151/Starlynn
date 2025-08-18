@@ -275,7 +275,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         if !IS_ROOT && best_score > -MIN_MATE_SCORE && is_quiet_or_losing {
             // LMP (Late move pruning)
             if moves_seen as i32 > 3 + depth * depth {
-                break;
+                continue;
             }
 
             // SEE pruning
