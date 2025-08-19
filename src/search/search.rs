@@ -220,18 +220,24 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
     }
 
     // Node pruning
-    if !PV_NODE && !td.pos.in_check() && beta.abs() < MIN_MATE_SCORE && singular_move.is_none() {
+    if !PV_NODE && !td.pos.in_check() && singular_move.is_none() {
         let eval: i32 = td.static_eval(ply as usize, accs_idx);
 
         // RFP (reverse futility pruning)
-        if depth <= 7 && eval - depth * 75 >= beta {
+        if depth <= 7 && beta.abs() < MIN_MATE_SCORE && eval - depth * 75 >= beta {
             return (eval + beta) / 2;
+        }
+
+        // Razoring
+        if alpha.abs() < MIN_MATE_SCORE && eval + 350 + depth * depth * 275 <= alpha {
+            return q_search::<PV_NODE>(limits, td, tt, ply, alpha, beta, accs_idx);
         }
 
         // NMP (null move pruning)
         if td.pos.last_move().is_some()
             && td.pos.has_nbrq(td.pos.side_to_move())
             && depth >= 3
+            && beta.abs() < MIN_MATE_SCORE
             && eval >= beta
         {
             td.make_move(None, ply, accs_idx);
