@@ -172,7 +172,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
 
     // Dive into quiescence search in leaf nodes
     if depth <= 0 {
-        return q_search(limits, td, tt, ply, alpha, beta, accs_idx);
+        return q_search::<PV_NODE>(limits, td, tt, ply, alpha, beta, accs_idx);
     }
 
     if limits.update_max_duration_hit::<IS_ROOT>(td.root_depth, td.nodes) {
@@ -454,7 +454,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
 }
 
 // Quiescence search
-fn q_search(
+fn q_search<const PV_NODE: bool>(
     limits: &mut SearchLimits,
     td: &mut ThreadData,
     tt: &mut TT,
@@ -479,6 +479,22 @@ fn q_search(
 
     debug_assert!(!legal_moves.is_empty());
 
+    // Get TT entry data (if any)
+    let tt_idx: usize = tt.get_index(td.pos.zobrist_hash());
+    let tt_entry: TTEntry = tt[tt_idx];
+    let (_, tt_score, tt_bound, mut tt_move) = tt_entry.get(td.pos.zobrist_hash(), ply);
+
+    // TT cutoff
+    if !PV_NODE && let Some(tt_bound) = tt_bound {
+        #[allow(clippy::collapsible_if)]
+        if tt_bound == Bound::Exact
+            || (tt_bound == Bound::Upper && tt_score <= alpha)
+            || (tt_bound == Bound::Lower && tt_score >= beta)
+        {
+            return tt_score;
+        }
+    }
+
     let eval: i32 = td.static_eval(ply as usize, accs_idx);
 
     // Max ply or static eval fails high?
@@ -487,11 +503,6 @@ fn q_search(
     }
 
     alpha = alpha.max(eval);
-
-    // Get TT entry data (if any)
-    let tt_idx: usize = tt.get_index(td.pos.zobrist_hash());
-    let tt_entry: TTEntry = tt[tt_idx];
-    let (_, _, _, mut tt_move) = tt_entry.get(td.pos.zobrist_hash(), ply);
 
     // No TT move if it is quiet, underpromotion or illegal
     tt_move = tt_move.filter(|tt_mov| {
@@ -509,7 +520,7 @@ fn q_search(
     } {
         td.make_move(Some(mov), ply, accs_idx);
 
-        let score: i32 = -q_search(limits, td, tt, ply + 1, -beta, -alpha, accs_idx + 1);
+        let score: i32 = -q_search::<PV_NODE>(limits, td, tt, ply + 1, -beta, -alpha, accs_idx + 1);
 
         td.pos.undo_move();
 
