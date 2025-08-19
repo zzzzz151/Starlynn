@@ -10,6 +10,10 @@ use crate::chess::{
     types::{Color, PieceType, Square},
 };
 
+fn get_feature_idx(in_check: bool, piece_color: Color, pt: PieceType, sq: Square) -> usize {
+    (in_check as usize) * 768 + (piece_color as usize) * 384 + (pt as usize) * 64 + (sq as usize)
+}
+
 #[repr(C, align(64))]
 #[derive(Clone)]
 pub struct BothAccumulators {
@@ -57,10 +61,20 @@ impl BothAccumulators {
         &self.activated_accs
     }
 
-    pub fn enable_feature(&mut self, mut piece_color: Color, pt: PieceType, mut sq: Square) {
+    pub fn enable_feature(
+        &mut self,
+        in_check: bool,
+        mut piece_color: Color,
+        pt: PieceType,
+        mut sq: Square,
+    ) {
         for unact_acc in &mut self.unactivated_accs {
+            let feature_idx: usize = get_feature_idx(in_check, piece_color, pt, sq);
+
             for (i, x) in unact_acc.iter_mut().enumerate() {
-                *x += NET.ft_w[piece_color][pt][sq][i];
+                unsafe {
+                    *x += NET.ft_w.get_unchecked(feature_idx)[i];
+                }
             }
 
             piece_color = !piece_color;
@@ -82,8 +96,15 @@ impl BothAccumulators {
             return;
         }
 
+        let in_check: bool = pos_after_move.in_check();
+
         let state_moved: &PosState =
             unsafe { pos_after_move.state::<1>().debug_unwrap_unchecked() };
+
+        if in_check != state_moved.in_check() {
+            *self = BothAccumulators::from(pos_after_move);
+            return;
+        }
 
         let stm: Color = state_moved.side_to_move();
         let mut piece_color = stm;
@@ -118,23 +139,31 @@ impl BothAccumulators {
                     _ => panic!("Invalid castling king target square"),
                 };
 
-                update_castling(acc, prev_acc, piece_color, src, dst, rook_src, rook_dst);
+                update_castling(
+                    acc,
+                    prev_acc,
+                    get_feature_idx(in_check, piece_color, PieceType::King, src),
+                    get_feature_idx(in_check, piece_color, PieceType::King, dst),
+                    get_feature_idx(in_check, piece_color, PieceType::Rook, rook_src),
+                    get_feature_idx(in_check, piece_color, PieceType::Rook, rook_dst),
+                );
             } else if let Some(pt_captured) = pos_after_move.piece_type_captured() {
                 update_capture(
                     acc,
                     prev_acc,
-                    piece_color,
-                    pt_moved,
-                    pt_placed,
-                    src,
-                    dst,
-                    pt_captured,
-                    captured_piece_sq,
+                    get_feature_idx(in_check, !piece_color, pt_captured, captured_piece_sq),
+                    get_feature_idx(in_check, piece_color, pt_placed, dst),
+                    get_feature_idx(in_check, piece_color, pt_moved, src),
                 );
 
                 captured_piece_sq = captured_piece_sq.rank_flipped();
             } else {
-                update_non_capture(acc, prev_acc, piece_color, pt_moved, pt_placed, src, dst);
+                update_non_capture(
+                    acc,
+                    prev_acc,
+                    get_feature_idx(in_check, piece_color, pt_moved, src),
+                    get_feature_idx(in_check, piece_color, pt_placed, dst),
+                );
             }
 
             piece_color = !piece_color;
@@ -159,7 +188,7 @@ impl From<&Position> for BothAccumulators {
         for piece_color in [Color::White, Color::Black] {
             for pt in PieceType::iter() {
                 for square in pos.piece_bb(piece_color, pt) {
-                    both_accs.enable_feature(piece_color, pt, square);
+                    both_accs.enable_feature(pos.in_check(), piece_color, pt, square);
                 }
             }
         }
@@ -171,50 +200,47 @@ impl From<&Position> for BothAccumulators {
 fn update_castling(
     acc: &mut [i16; HALF_HL_SIZE],
     prev_acc: &[i16; HALF_HL_SIZE],
-    piece_color: Color,
-    king_src: Square,
-    king_dst: Square,
-    rook_src: Square,
-    rook_dst: Square,
+    sub_king_idx: usize,
+    add_king_idx: usize,
+    sub_rook_idx: usize,
+    add_rook_idx: usize,
 ) {
-    for i in 0..HALF_HL_SIZE {
-        acc[i] = prev_acc[i] - NET.ft_w[piece_color][PieceType::King][king_src][i]
-            + NET.ft_w[piece_color][PieceType::King][king_dst][i]
-            - NET.ft_w[piece_color][PieceType::Rook][rook_src][i]
-            + NET.ft_w[piece_color][PieceType::Rook][rook_dst][i];
+    unsafe {
+        for i in 0..HALF_HL_SIZE {
+            acc[i] = prev_acc[i] - NET.ft_w.get_unchecked(sub_king_idx)[i]
+                + NET.ft_w.get_unchecked(add_king_idx)[i]
+                - NET.ft_w.get_unchecked(sub_rook_idx)[i]
+                + NET.ft_w.get_unchecked(add_rook_idx)[i];
+        }
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn update_capture(
     acc: &mut [i16; HALF_HL_SIZE],
     prev_acc: &[i16; HALF_HL_SIZE],
-    piece_color: Color,
-    pt_moved: PieceType,
-    pt_placed: PieceType,
-    src: Square,
-    dst: Square,
-    pt_captured: PieceType,
-    captured_piece_sq: Square,
+    sub_captured_idx: usize,
+    add_piece_idx: usize,
+    sub_piece_idx: usize,
 ) {
-    for i in 0..HALF_HL_SIZE {
-        acc[i] = prev_acc[i] - NET.ft_w[!piece_color][pt_captured][captured_piece_sq][i]
-            + NET.ft_w[piece_color][pt_placed][dst][i]
-            - NET.ft_w[piece_color][pt_moved][src][i];
+    unsafe {
+        for i in 0..HALF_HL_SIZE {
+            acc[i] = prev_acc[i] - NET.ft_w.get_unchecked(sub_captured_idx)[i]
+                + NET.ft_w.get_unchecked(add_piece_idx)[i]
+                - NET.ft_w.get_unchecked(sub_piece_idx)[i];
+        }
     }
 }
 
 fn update_non_capture(
     acc: &mut [i16; HALF_HL_SIZE],
     prev_acc: &[i16; HALF_HL_SIZE],
-    piece_color: Color,
-    pt_moved: PieceType,
-    pt_placed: PieceType,
-    src: Square,
-    dst: Square,
+    sub_piece_idx: usize,
+    add_piece_idx: usize,
 ) {
-    for i in 0..HALF_HL_SIZE {
-        acc[i] = prev_acc[i] - NET.ft_w[piece_color][pt_moved][src][i]
-            + NET.ft_w[piece_color][pt_placed][dst][i];
+    unsafe {
+        for i in 0..HALF_HL_SIZE {
+            acc[i] = prev_acc[i] - NET.ft_w.get_unchecked(sub_piece_idx)[i]
+                + NET.ft_w.get_unchecked(add_piece_idx)[i];
+        }
     }
 }
