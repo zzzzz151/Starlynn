@@ -511,6 +511,8 @@ fn q_search<const PV_NODE: bool>(
 
     let mut move_picker = MovePicker::new(tt_move);
     let mut best_score: i32 = eval;
+    let mut bound = Bound::Upper;
+    let mut best_move: Option<ChessMove> = None;
 
     while let Some((mov, _logit)) = {
         let both_accs: &mut BothAccumulators =
@@ -536,14 +538,27 @@ fn q_search<const PV_NODE: bool>(
         }
 
         alpha = score;
+        best_move = Some(mov);
 
         // Fail high?
         if score >= beta {
+            bound = Bound::Lower;
             break;
         }
     }
 
     debug_assert!(best_score.abs() < INF);
+
+    // Update TT entry
+    tt[tt_idx].update(
+        td.pos.zobrist_hash(),
+        0,
+        best_score as i16,
+        ply,
+        bound,
+        best_move,
+    );
+
     best_score
 }
 

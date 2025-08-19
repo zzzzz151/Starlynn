@@ -69,7 +69,7 @@ impl TTEntry {
         mut new_score: i16,
         ply: u32,
         new_bound: Bound,
-        new_move: Option<ChessMove>,
+        mut new_move: Option<ChessMove>,
     ) {
         // Fix mate scores
         if new_score as i32 >= MIN_MATE_SCORE {
@@ -78,12 +78,18 @@ impl TTEntry {
             new_score -= ply as i16;
         }
 
+        // Don't replace an existing move with an upper bound move
+        let current_move: Option<ChessMove> = self.mov;
+        if current_move.is_some() && new_bound == Bound::Upper {
+            new_move = self.mov;
+        }
+
         *self = TTEntry {
             zobrist_hash: new_hash,
             depth: new_depth,
             score: new_score,
             bound: Some(new_bound),
-            mov: new_move.or(self.mov),
+            mov: new_move,
         };
     }
 }
