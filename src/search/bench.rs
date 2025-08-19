@@ -65,7 +65,7 @@ const BENCH_FENS: [&str; 52] = [
 ];
 
 pub fn bench(depth: NonZeroU32) {
-    let mut limits = SearchLimits::new(&Instant::now(), Some(depth), None, None);
+    let mut limits = SearchLimits::new(&Instant::now(), Some(depth), None, None, None);
     let mut td = ThreadData::new();
 
     let mut tt = TT::new(BENCH_TT_SIZE_MIB);

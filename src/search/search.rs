@@ -77,9 +77,13 @@ pub fn search<const PRINT_INFO: bool>(
             );
         }
 
+        // Stop searching if soft nodes limit hit or soft time limit hit
         if limits
             .max_nodes
             .is_some_and(|max_nodes| td.nodes >= max_nodes.get())
+            || limits
+                .max_soft_duration
+                .is_some_and(|max_soft_dur| elapsed >= max_soft_dur)
         {
             break;
         }

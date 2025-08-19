@@ -17,7 +17,7 @@ use crate::nn::{accumulator::BothAccumulators, moves_map::map_moves_1880, value_
 
 use crate::search::{
     bench::{DEFAULT_BENCH_DEPTH, bench},
-    limits::SearchLimits,
+    limits::{HARD_TIME_PERCENTAGE, SOFT_TIME_PERCENTAGE, SearchLimits},
     search::search,
     thread_data::ThreadData,
     tt::TT,
@@ -192,33 +192,31 @@ fn uci_position(tokens: &Vec<&str>, pos: &mut Position) {
 }
 
 fn uci_go(tokens: &[&str], td: &mut ThreadData, tt: &mut TT) {
-    let mut limits = SearchLimits::new(&Instant::now(), None, None, None);
+    let mut limits = SearchLimits::new(&Instant::now(), None, None, None, None);
 
-    for pair in tokens[1..].chunks(2) {
-        if let &[token1, token2] = pair {
-            match token1 {
-                "depth" => limits.max_depth = Some(token2.parse().expect("Error parsing depth")),
-                "nodes" => limits.max_nodes = Some(token2.parse().expect("Error parsing nodes")),
+    for window in tokens[1..].windows(2).step_by(2) {
+        let (token1, token2): (&str, &str) = (window[0], window[1]);
 
-                token1
-                    if token1 == "movetime"
-                        || (token1 == "wtime" && td.pos.side_to_move() == Color::White)
-                        || (token1 == "btime" && td.pos.side_to_move() == Color::Black) =>
-                {
-                    let mut time_ms: u64 =
-                        token2.parse::<i64>().expect("Error parsing time").max(0) as u64;
+        if token1 == "depth" {
+            limits.max_depth = Some(token2.parse().expect("Error parsing depth"));
+        } else if token1 == "nodes" {
+            limits.max_nodes = Some(token2.parse().expect("Error parsing nodes"));
+        } else if token1 == "movetime"
+            || (token1 == "wtime" && td.pos.side_to_move() == Color::White)
+            || (token1 == "btime" && td.pos.side_to_move() == Color::Black)
+        {
+            let mut time_ms: u64 = token2.parse::<i64>().expect("Error parsing time").max(0) as u64;
+            time_ms = time_ms.saturating_sub(OVERHEAD_MS);
 
-                    time_ms = time_ms.saturating_sub(OVERHEAD_MS);
+            if token1 != "movetime" {
+                time_ms = (time_ms as f64 * HARD_TIME_PERCENTAGE).round() as u64;
 
-                    if token1 != "movetime" {
-                        time_ms /= 25;
-                    }
-
-                    limits.max_duration = Some(Duration::from_millis(time_ms));
-                }
-                _ => {}
+                let soft_time_ms: u64 = (time_ms as f64 * SOFT_TIME_PERCENTAGE).round() as u64;
+                limits.max_soft_duration = Some(Duration::from_millis(soft_time_ms));
             }
-        };
+
+            limits.max_duration = Some(Duration::from_millis(time_ms));
+        }
     }
 
     let best_move: Option<ChessMove> = search::<true>(&mut limits, td, tt).0;
