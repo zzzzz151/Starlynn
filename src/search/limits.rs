@@ -2,7 +2,7 @@ use std::num::{NonZeroU32, NonZeroU64};
 use std::time::{Duration, Instant};
 
 pub const HARD_TIME_PERCENTAGE: f64 = 0.75;
-pub const SOFT_TIME_PERCENTAGE: f64 = 0.1;
+pub const SOFT_TIME_PERCENTAGE: f64 = 0.05;
 
 pub struct SearchLimits {
     pub start_time: Instant,
