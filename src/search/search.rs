@@ -531,7 +531,6 @@ fn q_search<const PV_NODE: bool>(
         }
 
         best_score = best_score.max(score);
-        best_move = Some(mov);
 
         // Fail low?
         if score <= alpha {
@@ -539,6 +538,7 @@ fn q_search<const PV_NODE: bool>(
         }
 
         alpha = score;
+        best_move = Some(mov);
 
         // Fail high?
         if score >= beta {
