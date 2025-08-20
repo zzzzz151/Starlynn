@@ -166,6 +166,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
 ) -> i32 {
     debug_assert!(IS_ROOT == (ply == 0));
     debug_assert!(!IS_ROOT || PV_NODE);
+    debug_assert!(depth <= MAX_DEPTH);
     debug_assert!(alpha.abs() <= INF && beta.abs() <= INF);
     debug_assert!(alpha < beta);
     debug_assert!(PV_NODE || beta - alpha == 1);
@@ -343,9 +344,11 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
             );
 
             // Extend TT move if it is singular (much better than all other moves)
-            if s_score < s_beta {
-                new_depth += 1;
-            }
+            new_depth += (s_score < s_beta) as i32;
+
+            // Double extension
+            new_depth +=
+                (depth < MAX_DEPTH && s_score > -MIN_MATE_SCORE && s_score + 25 < s_beta) as i32;
         }
 
         td.make_move(Some(mov), ply, accs_idx);
