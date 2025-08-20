@@ -348,7 +348,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
 
             // Double extension
             new_depth +=
-                (depth < MAX_DEPTH && s_score > -MIN_MATE_SCORE && s_score + 25 < s_beta) as i32;
+                (!PV_NODE && depth < MAX_DEPTH && s_score > -MIN_MATE_SCORE && s_score + 25 < s_beta) as i32;
         }
 
         td.make_move(Some(mov), ply, accs_idx);
