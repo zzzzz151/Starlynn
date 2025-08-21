@@ -74,6 +74,8 @@ impl BothAccumulators {
                 }
             }
         }
+
+        self.is_activated_updated = false;
     }
 
     pub fn set_not_updated(&mut self) {
@@ -123,7 +125,9 @@ impl BothAccumulators {
 
         // If in check input bucket changed, rebuild both accumulators
         if in_check != state_moved.in_check() {
-            *self = BothAccumulators::from(pos_after_move);
+            self.build_accumulator(Color::White, pos_after_move);
+            self.build_accumulator(Color::Black, pos_after_move);
+            self.is_unactivated_updated = true;
             return;
         }
 
