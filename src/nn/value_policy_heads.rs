@@ -7,7 +7,7 @@ use crate::chess::{
     chess_move::ChessMove,
     move_gen::MovesList,
     position::Position,
-    types::{Color, Square},
+    types::{Color, File, Square},
 };
 
 pub type ScoredMoves = ArrayVec<(ChessMove, f32), 256>;
@@ -19,7 +19,9 @@ pub fn value_eval(both_accs: &mut BothAccumulators, stm: Color) -> i32 {
 
     for (is_nstm, &color) in [stm, !stm].iter().enumerate() {
         for i in 0..HALF_HL_SIZE {
-            result += hl_activated[color][i] as f32 * NET.out_w_value[is_nstm][i];
+            unsafe {
+                result += hl_activated[color][i] as f32 * NET.out_w_value.get_unchecked(is_nstm)[i];
+            }
         }
     }
 
@@ -36,6 +38,7 @@ pub fn get_policy_logits<const Q_SEARCH: bool>(
     exclude_move: Option<ChessMove>,
 ) -> ScoredMoves {
     let mut logits: ScoredMoves = ArrayVec::new_const();
+    let king_sq: Square = pos.king_square(pos.side_to_move());
 
     for &mov in legal_moves {
         if Some(mov) == exclude_move {
@@ -48,19 +51,27 @@ pub fn get_policy_logits<const Q_SEARCH: bool>(
         }
 
         let hl_activated: &[[i16; HALF_HL_SIZE]; 2] = both_accs.activated_accs();
-        let mut move_oriented: ChessMove = mov;
+
+        let mut new_src: Square = mov.src();
+        let mut new_dst: Square = mov.dst();
 
         // Flip move vertically if black to move
         if pos.side_to_move() == Color::Black {
-            let new_src: Square = mov.src().rank_flipped();
-            let new_dst: Square = mov.dst().rank_flipped();
-
-            if let Some(promo_pt) = mov.promotion() {
-                move_oriented = ChessMove::new_promotion(new_src, new_dst, promo_pt);
-            } else {
-                move_oriented = ChessMove::new(new_src, new_dst, mov.piece_type());
-            }
+            new_src = new_src.rank_flipped();
+            new_dst = new_dst.rank_flipped();
         }
+
+        // Mirror move along vertical axis if stm king on left side of board
+        if king_sq.file() < File::E {
+            new_src = new_src.file_flipped();
+            new_dst = new_dst.file_flipped();
+        }
+
+        let move_oriented: ChessMove = if let Some(promo_pt) = mov.promotion() {
+            ChessMove::new_promotion(new_src, new_dst, promo_pt)
+        } else {
+            ChessMove::new(new_src, new_dst, mov.piece_type())
+        };
 
         let move_idx_1882: usize = get_move_idx_1882(move_oriented);
         let mut logit: f32 = 0.0;
@@ -70,7 +81,7 @@ pub fn get_policy_logits<const Q_SEARCH: bool>(
 
             for (is_nstm, &color) in [pos.side_to_move(), !pos.side_to_move()].iter().enumerate() {
                 for i in 0..HALF_HL_SIZE {
-                    logit += hl_activated[color][i] as f32 * out_w[is_nstm][i];
+                    logit += hl_activated[color][i] as f32 * out_w.get_unchecked(is_nstm)[i];
                 }
             }
 
@@ -106,16 +117,16 @@ mod tests {
     const FEN_START_FLIPPED: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1";
 
     const FEN_KIWIPETE_MODIFIED: &str =
-        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w Kq - 0 1";
+        "r2k3r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w K - 0 1";
 
     const FEN_KIWIPETE_MODIFIED_FLIPPED: &str =
-        "r3k2r/pppbbppp/2n2q1P/1P2p3/3pn3/BN2PNP1/P1PPQPB1/R3K2R b Qk - 0 1";
+        "r3k2r/pppbbppp/2n2q1P/1P2p3/3pn3/BN2PNP1/P1PPQPB1/R2K3R b k - 0 1";
 
-    const FEN_MATE_IN_1_PROMOS_EP: &str = "6q1/5P2/8/2Pp4/8/6R1/8/5K1k w - d6 0 1";
-    const FEN_MATE_IN_1_PROMOS_EP_FLIPPED: &str = "5k1K/8/6r1/8/2pP4/8/5p2/6Q1 b - d3 0 1";
+    const FEN_MATE_IN_1_PROMOS_EP: &str = "3q4/4P3/8/5Pp1/8/2R5/2K5/k7 w - g6 0 1";
+    const FEN_MATE_IN_1_PROMOS_EP_FLIPPED: &str = "K7/2k5/2r5/8/5pP1/8/4p3/3Q4 b - g3 0 1";
 
-    const FEN_IN_CHECK: &str = "4r1k1/3P4/3N4/8/8/8/8/4K2R w K - 0 1";
-    const FEN_IN_CHECK_FLIPPED: &str = "4k2r/8/8/8/8/3n4/3p4/4R1K1 b k - 0 1";
+    const FEN_IN_CHECK: &str = "3b2k1/4P1p1/1K6/8/8/8/8/8 w - - 0 1";
+    const FEN_IN_CHECK_FLIPPED: &str = "8/8/8/8/8/1k6/4p1P1/3B2K1 b - - 0 1";
 
     #[test]
     fn test_value() {
@@ -130,14 +141,10 @@ mod tests {
         };
 
         for (fen, fen_flipped, expected_eval) in [
-            (FEN_START, FEN_START_FLIPPED, 42),
-            (FEN_KIWIPETE_MODIFIED, FEN_KIWIPETE_MODIFIED_FLIPPED, -111),
-            (
-                FEN_MATE_IN_1_PROMOS_EP,
-                FEN_MATE_IN_1_PROMOS_EP_FLIPPED,
-                -11,
-            ),
-            (FEN_IN_CHECK, FEN_IN_CHECK_FLIPPED, 755),
+            (FEN_START, FEN_START_FLIPPED, 51),
+            (FEN_KIWIPETE_MODIFIED, FEN_KIWIPETE_MODIFIED_FLIPPED, -99),
+            (FEN_MATE_IN_1_PROMOS_EP, FEN_MATE_IN_1_PROMOS_EP_FLIPPED, 84),
+            (FEN_IN_CHECK, FEN_IN_CHECK_FLIPPED, -183),
         ] {
             assert_value_eval(fen, expected_eval);
             assert_value_eval(fen_flipped, expected_eval);
@@ -150,119 +157,116 @@ mod tests {
         // These hashmaps map move to expected logit and expected softmax'd policy
 
         let start_pos_policy: HashMap<&str, (f32, f32)> = HashMap::from([
-            ("g1f3", (2.01, 0.39)),
-            ("b1c3", (1.58, 0.25)),
-            ("e2e4", (0.32, 0.07)),
-            ("d2d4", (0.10, 0.06)),
-            ("e2e3", (-0.24, 0.04)),
-            ("d2d3", (-0.44, 0.03)),
-            ("c2c3", (-0.54, 0.03)),
-            ("b1a3", (-0.91, 0.02)),
-            ("g2g3", (-1.25, 0.01)),
-            ("b2b3", (-1.29, 0.01)),
-            ("g1h3", (-1.29, 0.01)),
-            ("c2c4", (-1.44, 0.01)),
-            ("b2b4", (-1.49, 0.01)),
-            ("a2a4", (-1.58, 0.01)),
-            ("f2f4", (-1.59, 0.01)),
-            ("f2f3", (-2.03, 0.01)),
-            ("h2h4", (-2.29, 0.01)),
-            ("a2a3", (-2.47, 0.00)),
-            ("g2g4", (-2.71, 0.00)),
-            ("h2h3", (-4.05, 0.00)),
+            ("g1f3", (1.73, 0.37)),
+            ("b1c3", (1.36, 0.26)),
+            ("d2d3", (0.10, 0.07)),
+            ("d2d4", (0.10, 0.07)),
+            ("e2e4", (-0.14, 0.06)),
+            ("c2c3", (-0.72, 0.03)),
+            ("b1a3", (-0.76, 0.03)),
+            ("c2c4", (-0.85, 0.03)),
+            ("e2e3", (-1.02, 0.02)),
+            ("a2a4", (-2.13, 0.01)),
+            ("b2b4", (-2.29, 0.01)),
+            ("f2f4", (-2.31, 0.01)),
+            ("g1h3", (-2.32, 0.01)),
+            ("a2a3", (-2.36, 0.01)),
+            ("b2b3", (-2.47, 0.01)),
+            ("g2g3", (-2.50, 0.01)),
+            ("f2f3", (-2.99, 0.00)),
+            ("h2h4", (-3.37, 0.00)),
+            ("h2h3", (-4.64, 0.00)),
+            ("g2g4", (-4.93, 0.00)),
         ]);
 
         let kiwipete_mod_policy: HashMap<&str, (f32, f32)> = HashMap::from([
-            ("c3d1", (2.66, 0.44)),
-            ("e2a6", (1.17, 0.10)),
-            ("d5e6", (0.54, 0.05)),
-            ("c3a4", (0.46, 0.05)),
-            ("c3b5", (0.30, 0.04)),
-            ("f3h3", (0.20, 0.04)),
-            ("e5d3", (0.08, 0.03)),
-            ("e5c6", (-0.01, 0.03)),
-            ("c3b1", (-0.21, 0.02)),
-            ("g2h3", (-0.35, 0.02)),
-            ("e5g6", (-0.66, 0.02)),
-            ("f3g3", (-0.67, 0.02)),
-            ("g2g3", (-0.73, 0.01)),
-            ("e1g1", (-0.90, 0.01)),
-            ("d2f4", (-1.01, 0.01)),
-            ("b2b3", (-1.02, 0.01)),
-            ("e5g4", (-1.09, 0.01)),
-            ("e5d7", (-1.27, 0.01)),
-            ("g2g4", (-1.36, 0.01)),
-            ("f3e3", (-1.39, 0.01)),
-            ("f3f4", (-1.43, 0.01)),
-            ("f3d3", (-1.50, 0.01)),
-            ("d2g5", (-1.72, 0.01)),
-            ("e2d3", (-1.77, 0.01)),
-            ("d5d6", (-1.87, 0.00)),
-            ("d2e3", (-1.89, 0.00)),
-            ("a2a4", (-1.92, 0.00)),
-            ("a1d1", (-2.20, 0.00)),
-            ("e2d1", (-2.30, 0.00)),
-            ("e2b5", (-2.37, 0.00)),
-            ("e5c4", (-2.38, 0.00)),
-            ("a2a3", (-2.56, 0.00)),
-            ("d2c1", (-2.60, 0.00)),
-            ("e5f7", (-2.78, 0.00)),
-            ("e2f1", (-3.08, 0.00)),
-            ("a1c1", (-3.29, 0.00)),
-            ("a1b1", (-3.36, 0.00)),
-            ("f3f6", (-3.43, 0.00)),
-            ("f3g4", (-3.82, 0.00)),
-            ("h1g1", (-3.82, 0.00)),
-            ("d2h6", (-4.44, 0.00)),
-            ("e1d1", (-5.24, 0.00)),
-            ("e1f1", (-5.43, 0.00)),
-            ("e2c4", (-5.57, 0.00)),
-            ("f3f5", (-6.64, 0.00)),
-            ("h1f1", (-6.83, 0.00)),
-            ("f3h5", (-7.38, 0.00)),
+            ("e5d3", (1.70, 0.23)),
+            ("e5g6", (1.23, 0.14)),
+            ("e2a6", (1.21, 0.14)),
+            ("e5d7", (0.42, 0.06)),
+            ("e1g1", (0.38, 0.06)),
+            ("d5e6", (0.05, 0.04)),
+            ("g2h3", (-0.22, 0.03)),
+            ("f3h3", (-0.47, 0.03)),
+            ("e5c6", (-0.59, 0.02)),
+            ("b2b3", (-0.79, 0.02)),
+            ("d2g5", (-0.98, 0.02)),
+            ("e5g4", (-0.99, 0.02)),
+            ("d2f4", (-1.05, 0.01)),
+            ("c3d1", (-1.07, 0.01)),
+            ("e5f7", (-1.14, 0.01)),
+            ("g2g3", (-1.20, 0.01)),
+            ("a1c1", (-1.26, 0.01)),
+            ("c3a4", (-1.34, 0.01)),
+            ("d2e3", (-1.37, 0.01)),
+            ("f3g3", (-1.53, 0.01)),
+            ("f3e3", (-1.61, 0.01)),
+            ("a1d1", (-1.62, 0.01)),
+            ("g2g4", (-1.66, 0.01)),
+            ("a2a4", (-1.92, 0.01)),
+            ("e2f1", (-1.93, 0.01)),
+            ("a2a3", (-1.94, 0.01)),
+            ("c3b5", (-1.98, 0.01)),
+            ("d5d6", (-2.05, 0.01)),
+            ("e2d3", (-2.13, 0.00)),
+            ("f3f4", (-2.37, 0.00)),
+            ("e2b5", (-2.38, 0.00)),
+            ("f3d3", (-2.45, 0.00)),
+            ("e5c4", (-2.62, 0.00)),
+            ("f3f6", (-2.78, 0.00)),
+            ("e2d1", (-3.01, 0.00)),
+            ("e1d1", (-3.35, 0.00)),
+            ("h1g1", (-3.48, 0.00)),
+            ("d2h6", (-3.61, 0.00)),
+            ("a1b1", (-3.79, 0.00)),
+            ("d2c1", (-4.03, 0.00)),
+            ("c3b1", (-4.20, 0.00)),
+            ("f3g4", (-4.66, 0.00)),
+            ("e1f1", (-5.33, 0.00)),
+            ("e2c4", (-6.68, 0.00)),
+            ("h1f1", (-6.79, 0.00)),
+            ("f3f5", (-7.10, 0.00)),
+            ("f3h5", (-7.91, 0.00)),
         ]);
 
         let mate_in_1_promos_ep_policy: HashMap<&str, (f32, f32)> = HashMap::from([
-            ("f7g8q", (2.77, 0.53)),
-            ("g3g8", (1.67, 0.17)),
-            ("c5c6", (0.70, 0.07)),
-            ("c5d6", (0.57, 0.06)),
-            ("f1f2", (-0.19, 0.03)),
-            ("f7g8n", (-0.68, 0.02)),
-            ("f1e2", (-0.78, 0.02)),
-            ("g3h3", (-0.79, 0.01)),
-            ("g3e3", (-0.84, 0.01)),
-            ("f7f8q", (-0.85, 0.01)),
-            ("g3f3", (-1.03, 0.01)),
-            ("f1e1", (-1.06, 0.01)),
-            ("f7g8r", (-1.22, 0.01)),
-            ("f7g8b", (-1.52, 0.01)),
-            ("g3g4", (-1.82, 0.01)),
-            ("g3g5", (-2.05, 0.00)),
-            ("g3c3", (-2.35, 0.00)),
-            ("g3g2", (-2.38, 0.00)),
-            ("g3a3", (-2.57, 0.00)),
-            ("g3d3", (-2.61, 0.00)),
-            ("g3b3", (-2.62, 0.00)),
-            ("g3g7", (-2.70, 0.00)),
-            ("g3g6", (-2.77, 0.00)),
-            ("f7f8r", (-3.26, 0.00)),
-            ("g3g1", (-3.42, 0.00)),
-            ("f7f8b", (-3.56, 0.00)),
-            ("f7f8n", (-4.28, 0.00)),
+            ("e7d8q", (3.11, 0.70)),
+            ("f5g6", (1.11, 0.10)),
+            ("f5f6", (0.03, 0.03)),
+            ("e7d8n", (-0.29, 0.02)),
+            ("c3a3", (-0.39, 0.02)),
+            ("e7e8q", (-0.56, 0.02)),
+            ("e7d8r", (-0.76, 0.01)),
+            ("c3d3", (-0.81, 0.01)),
+            ("c3e3", (-0.86, 0.01)),
+            ("c3c5", (-1.20, 0.01)),
+            ("e7d8b", (-1.21, 0.01)),
+            ("c3c6", (-1.25, 0.01)),
+            ("c3b3", (-1.32, 0.01)),
+            ("c2b3", (-1.44, 0.01)),
+            ("c3c4", (-1.50, 0.01)),
+            ("c3f3", (-1.96, 0.00)),
+            ("c2c1", (-2.12, 0.00)),
+            ("c3c8", (-2.66, 0.00)),
+            ("e7e8b", (-2.83, 0.00)),
+            ("c3g3", (-2.91, 0.00)),
+            ("e7e8r", (-3.13, 0.00)),
+            ("c3h3", (-3.17, 0.00)),
+            ("c3c7", (-3.21, 0.00)),
+            ("e7e8n", (-3.56, 0.00)),
         ]);
 
         let in_check_policy: HashMap<&str, (f32, f32)> = HashMap::from([
-            ("d7e8q", (2.95, 0.63)),
-            ("d6e8", (2.10, 0.27)),
-            ("d7e8n", (-0.11, 0.03)),
-            ("e1f2", (-0.67, 0.02)),
-            ("d7e8r", (-0.90, 0.01)),
-            ("d7e8b", (-0.91, 0.01)),
-            ("e1d1", (-1.15, 0.01)),
-            ("e1d2", (-1.61, 0.01)),
-            ("d6e4", (-2.73, 0.00)),
-            ("e1f1", (-2.78, 0.00)),
+            ("e7d8q", (2.88, 0.87)),
+            ("b6c6", (-0.53, 0.03)),
+            ("b6b7", (-0.58, 0.03)),
+            ("e7d8n", (-0.79, 0.02)),
+            ("e7d8r", (-0.98, 0.02)),
+            ("e7d8b", (-1.40, 0.01)),
+            ("b6b5", (-1.96, 0.01)),
+            ("b6a7", (-2.04, 0.01)),
+            ("b6c5", (-2.04, 0.01)),
+            ("b6a6", (-2.12, 0.01)),
         ]);
 
         let assert_policy = |fen: &str, expected: &HashMap<&str, (f32, f32)>| {
