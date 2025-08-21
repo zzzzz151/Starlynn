@@ -1,16 +1,28 @@
 use super::params::{FT_Q, HALF_HL_SIZE, NET};
+use crate::chess::{chess_move::ChessMove, pos_state::PosState, position::Position, types::*};
 use debug_unwraps::DebugUnwrapExt;
 use std::mem::transmute;
 use strum::IntoEnumIterator;
 
-use crate::chess::{
-    chess_move::ChessMove,
-    pos_state::PosState,
-    position::Position,
-    types::{Color, PieceType, Square},
-};
+fn get_feature_idx(
+    acc_color: Color,
+    king_sq: Square,
+    in_check: bool,
+    mut piece_color: Color,
+    pt: PieceType,
+    mut sq: Square,
+) -> usize {
+    // If black to move, flip pieces vertically
+    if acc_color == Color::Black {
+        piece_color = !piece_color;
+        sq = sq.rank_flipped();
+    }
 
-fn get_feature_idx(in_check: bool, piece_color: Color, pt: PieceType, sq: Square) -> usize {
+    // If our king is on left side of board, mirror all pieces along vertical axis
+    if king_sq.file() < File::E {
+        sq = sq.file_flipped();
+    }
+
     (in_check as usize) * 768 + (piece_color as usize) * 384 + (pt as usize) * 64 + (sq as usize)
 }
 
@@ -30,6 +42,37 @@ impl BothAccumulators {
             activated_accs: [[0; HALF_HL_SIZE]; 2],
             is_unactivated_updated: true,
             is_activated_updated: false,
+        }
+    }
+
+    pub fn build_accumulator(&mut self, acc_color: Color, pos: &Position) {
+        self.unactivated_accs[acc_color] = NET.hl_b;
+
+        let mut enable_feature =
+            |acc_color: Color, pos: &Position, piece_color: Color, pt: PieceType, sq: Square| {
+                let feature_idx: usize = get_feature_idx(
+                    acc_color,
+                    pos.king_square(acc_color),
+                    pos.in_check(),
+                    piece_color,
+                    pt,
+                    sq,
+                );
+
+                let ft_weights: &[i16; HALF_HL_SIZE] =
+                    unsafe { NET.ft_w.get_unchecked(feature_idx) };
+
+                for (x, w) in self.unactivated_accs[acc_color].iter_mut().zip(ft_weights) {
+                    *x += *w;
+                }
+            };
+
+        for piece_color in [Color::White, Color::Black] {
+            for pt in PieceType::iter() {
+                for square in pos.piece_bb(piece_color, pt) {
+                    enable_feature(acc_color, pos, piece_color, pt, square);
+                }
+            }
         }
     }
 
@@ -61,29 +104,6 @@ impl BothAccumulators {
         &self.activated_accs
     }
 
-    pub fn enable_feature(
-        &mut self,
-        in_check: bool,
-        mut piece_color: Color,
-        pt: PieceType,
-        mut sq: Square,
-    ) {
-        for unact_acc in &mut self.unactivated_accs {
-            let feature_idx: usize = get_feature_idx(in_check, piece_color, pt, sq);
-
-            for (i, x) in unact_acc.iter_mut().enumerate() {
-                unsafe {
-                    *x += NET.ft_w.get_unchecked(feature_idx)[i];
-                }
-            }
-
-            piece_color = !piece_color;
-            sq = sq.rank_flipped();
-        }
-
-        self.is_activated_updated = false;
-    }
-
     pub fn update(&mut self, prev_accs: &BothAccumulators, pos_after_move: &Position) {
         debug_assert!(prev_accs.is_unactivated_updated);
 
@@ -101,34 +121,28 @@ impl BothAccumulators {
         let state_moved: &PosState =
             unsafe { pos_after_move.state::<1>().debug_unwrap_unchecked() };
 
+        // If in check input bucket changed, rebuild both accumulators
         if in_check != state_moved.in_check() {
             *self = BothAccumulators::from(pos_after_move);
             return;
         }
 
         let stm: Color = state_moved.side_to_move();
-        let mut piece_color = stm;
-
         let mov: ChessMove = unsafe { pos_after_move.last_move().debug_unwrap_unchecked() };
-
-        let mut src: Square = mov.src();
-        let mut dst: Square = mov.dst();
-
+        let src: Square = mov.src();
+        let dst: Square = mov.dst();
         let pt_moved: PieceType = mov.piece_type();
         let pt_placed: PieceType = mov.promotion().unwrap_or(pt_moved);
 
-        let mut captured_piece_sq: Square =
-            if pt_moved == PieceType::Pawn && Some(dst) == state_moved.en_passant_square() {
-                unsafe { transmute(dst as u8 ^ 8) }
-            } else {
-                dst
-            };
+        for acc_color in [Color::White, Color::Black] {
+            let king_sq: Square = pos_after_move.king_square(acc_color);
 
-        for (acc, prev_acc) in self
-            .unactivated_accs
-            .iter_mut()
-            .zip(&prev_accs.unactivated_accs)
-        {
+            // If accumulator color's king crossed D to E or E to D, rebuild this accumulator
+            if (king_sq.file() < File::E) != (state_moved.king_square(acc_color).file() < File::E) {
+                self.build_accumulator(acc_color, pos_after_move);
+                continue;
+            }
+
             if mov.is_castling() {
                 // Rook from to
                 let (rook_src, rook_dst) = match dst {
@@ -140,35 +154,37 @@ impl BothAccumulators {
                 };
 
                 update_castling(
-                    acc,
-                    prev_acc,
-                    get_feature_idx(in_check, piece_color, PieceType::King, src),
-                    get_feature_idx(in_check, piece_color, PieceType::King, dst),
-                    get_feature_idx(in_check, piece_color, PieceType::Rook, rook_src),
-                    get_feature_idx(in_check, piece_color, PieceType::Rook, rook_dst),
+                    &mut self.unactivated_accs[acc_color],
+                    &prev_accs.unactivated_accs[acc_color],
+                    get_feature_idx(acc_color, king_sq, in_check, stm, PieceType::King, src),
+                    get_feature_idx(acc_color, king_sq, in_check, stm, PieceType::King, dst),
+                    get_feature_idx(acc_color, king_sq, in_check, stm, PieceType::Rook, rook_src),
+                    get_feature_idx(acc_color, king_sq, in_check, stm, PieceType::Rook, rook_dst),
                 );
             } else if let Some(pt_captured) = pos_after_move.piece_type_captured() {
-                update_capture(
-                    acc,
-                    prev_acc,
-                    get_feature_idx(in_check, !piece_color, pt_captured, captured_piece_sq),
-                    get_feature_idx(in_check, piece_color, pt_placed, dst),
-                    get_feature_idx(in_check, piece_color, pt_moved, src),
-                );
+                let captured_sq: Square = if pt_moved == PieceType::Pawn
+                    && Some(dst) == state_moved.en_passant_square()
+                {
+                    unsafe { transmute(dst as u8 ^ 8) }
+                } else {
+                    dst
+                };
 
-                captured_piece_sq = captured_piece_sq.rank_flipped();
+                update_capture(
+                    &mut self.unactivated_accs[acc_color],
+                    &prev_accs.unactivated_accs[acc_color],
+                    get_feature_idx(acc_color, king_sq, in_check, !stm, pt_captured, captured_sq),
+                    get_feature_idx(acc_color, king_sq, in_check, stm, pt_placed, dst),
+                    get_feature_idx(acc_color, king_sq, in_check, stm, pt_moved, src),
+                );
             } else {
                 update_non_capture(
-                    acc,
-                    prev_acc,
-                    get_feature_idx(in_check, piece_color, pt_moved, src),
-                    get_feature_idx(in_check, piece_color, pt_placed, dst),
+                    &mut self.unactivated_accs[acc_color],
+                    &prev_accs.unactivated_accs[acc_color],
+                    get_feature_idx(acc_color, king_sq, in_check, stm, pt_moved, src),
+                    get_feature_idx(acc_color, king_sq, in_check, stm, pt_placed, dst),
                 );
             }
-
-            piece_color = !piece_color;
-            src = src.rank_flipped();
-            dst = dst.rank_flipped();
         }
 
         self.is_unactivated_updated = true;
@@ -184,15 +200,8 @@ impl BothAccumulators {
 impl From<&Position> for BothAccumulators {
     fn from(pos: &Position) -> Self {
         let mut both_accs = BothAccumulators::new();
-
-        for piece_color in [Color::White, Color::Black] {
-            for pt in PieceType::iter() {
-                for square in pos.piece_bb(piece_color, pt) {
-                    both_accs.enable_feature(pos.in_check(), piece_color, pt, square);
-                }
-            }
-        }
-
+        both_accs.build_accumulator(Color::White, pos);
+        both_accs.build_accumulator(Color::Black, pos);
         both_accs
     }
 }
