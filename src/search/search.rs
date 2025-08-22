@@ -469,6 +469,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         let mut bonus: i32 = (best_score - eval) * depth;
         bonus = bonus.clamp(-HISTORY_MAX, HISTORY_MAX);
 
+        update_history(td.pawns_kings_corr(), bonus);
         update_history(td.non_pawns_corr(Color::White), bonus);
         update_history(td.non_pawns_corr(Color::Black), bonus);
     }
