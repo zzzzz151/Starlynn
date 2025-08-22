@@ -116,17 +116,16 @@ impl ThreadData {
             *(stack_entry.raw_eval.insert(raw_eval))
         });
 
-        let pawns_kings_corr: i32 = *(self.pawns_kings_corr()) as i32;
-        let w_non_pawns_corr: i32 = *(self.non_pawns_corr(Color::White)) as i32;
-        let b_non_pawns_corr: i32 = *(self.non_pawns_corr(Color::Black)) as i32;
+        let mut correction: i32 = *(self.pawns_kings_corr()) as i32;
 
-        let last_move_corr: i32 = if let Some(corr) = self.last_move_corr() {
-            (*corr as i32) / 2
-        } else {
-            0
-        };
+        correction += *(self.non_pawns_corr(Color::White)) as i32;
+        correction += *(self.non_pawns_corr(Color::Black)) as i32;
 
-        raw_eval + (pawns_kings_corr + w_non_pawns_corr + b_non_pawns_corr + last_move_corr) / 100
+        if let Some(last_move_corr) = self.last_move_corr() {
+            correction += (*last_move_corr as i32) / 2;
+        }
+
+        (raw_eval + correction / 100).clamp(-MIN_MATE_SCORE + 1, MIN_MATE_SCORE - 1)
     }
 
     pub fn pawns_kings_corr(&mut self) -> &mut i16 {
