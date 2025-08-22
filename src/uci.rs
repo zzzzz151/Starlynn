@@ -68,7 +68,7 @@ pub fn run_command(command: &str, td: &mut ThreadData, tt: &mut TT) {
             }
         }
         "ucinewgame" => {
-            td.pos = Position::try_from(FEN_START).unwrap();
+            td.ucinewgame();
             tt.reset_keep_size();
         }
         "isready" => println!("readyok"),

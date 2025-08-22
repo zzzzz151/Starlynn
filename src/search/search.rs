@@ -5,7 +5,7 @@ use super::thread_data::ThreadData;
 use super::tt::TT;
 use super::tt_entry::{Bound, TTEntry};
 use crate::GetCheckedIfDebug;
-use crate::chess::{chess_move::ChessMove, move_gen::MovesList, position::Position};
+use crate::chess::{chess_move::ChessMove, move_gen::MovesList, position::Position, types::Color};
 use crate::nn::accumulator::BothAccumulators;
 use arrayvec::ArrayVec;
 
@@ -24,7 +24,7 @@ pub fn search<const PRINT_INFO: bool>(
     td.nodes = 1;
     td.stack[0].pv.clear();
     td.stack[0].both_accs = BothAccumulators::from(&td.pos);
-    td.stack[0].static_eval = None;
+    td.stack[0].raw_eval = None;
 
     let mut score: i32 = 0;
 
@@ -213,17 +213,15 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         }
     }
 
-    td.update_both_accs(accs_idx);
+    let eval: i32 = td.static_eval(ply as usize, accs_idx);
 
     // Max ply?
     if ply as i32 >= MAX_DEPTH {
-        return td.static_eval(ply as usize, accs_idx);
+        return eval;
     }
 
     // Node pruning
     if !PV_NODE && !td.pos.in_check() && singular_move.is_none() {
-        let eval: i32 = td.static_eval(ply as usize, accs_idx);
-
         // RFP (reverse futility pruning)
         if depth <= 7 && beta.abs() < MIN_MATE_SCORE && eval - depth * 75 >= beta {
             return (eval + beta) / 2;
@@ -461,6 +459,20 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         best_move,
     );
 
+    // Update correction histories
+    if singular_move.is_none()
+        && best_score.abs() < MIN_MATE_SCORE
+        && best_move.is_none_or(|mov| td.pos.is_quiet_or_underpromotion(mov))
+        && (bound != Bound::Lower || best_score > eval)
+        && (bound != Bound::Upper || best_score < eval)
+    {
+        let mut bonus: i32 = (best_score - eval) * depth;
+        bonus = bonus.clamp(-HISTORY_MAX, HISTORY_MAX);
+
+        update_history(td.non_pawns_corr(Color::White), bonus);
+        update_history(td.non_pawns_corr(Color::Black), bonus);
+    }
+
     best_score
 }
 
@@ -610,4 +622,10 @@ fn get_terminal_score<const IS_ROOT: bool>(
     }
 
     None
+}
+
+fn update_history(value: &mut i16, bonus: i32) {
+    debug_assert!(bonus.abs() <= HISTORY_MAX);
+    let delta: i32 = bonus - bonus.abs() * (*value as i32) / HISTORY_MAX;
+    *value += delta as i16;
 }
