@@ -22,6 +22,7 @@ pub struct ThreadData {
     pub(crate) lmr_table: [[i32; 256]; MAX_DEPTH as usize + 1], // [depth][moves_seen]
     pawns_kings_corr_hist: [[i16; CORR_HIST_SIZE]; 2],      // [stm]
     non_pawns_corr_hist: [[[i16; CORR_HIST_SIZE]; 2]; 2],   // [stm][piece_color][color_pieces_hash]
+    last_move_corr_hist: [[[i16; 64]; 6]; 2], // [stm][last_move_piece_type][last_move_dst]
 }
 
 impl ThreadData {
@@ -52,6 +53,7 @@ impl ThreadData {
             lmr_table,
             pawns_kings_corr_hist: [[0; CORR_HIST_SIZE]; 2],
             non_pawns_corr_hist: [[[0; CORR_HIST_SIZE]; 2]; 2],
+            last_move_corr_hist: [[[0; 64]; 6]; 2],
         }
     }
 
@@ -59,6 +61,7 @@ impl ThreadData {
         self.pos = Position::try_from(FEN_START).unwrap();
         self.pawns_kings_corr_hist = [[0; CORR_HIST_SIZE]; 2];
         self.non_pawns_corr_hist = [[[0; CORR_HIST_SIZE]; 2]; 2];
+        self.last_move_corr_hist = [[[0; 64]; 6]; 2];
     }
 
     pub fn make_move(&mut self, mov: Option<ChessMove>, ply_before: u32, accs_idx_before: usize) {
@@ -98,6 +101,33 @@ impl ThreadData {
         both_accs
     }
 
+    // Returns static eval corrected
+    pub fn static_eval(&mut self, ply: usize, accs_idx: usize) -> i32 {
+        let stack_entry: &StackEntry = unsafe { self.stack.get_checked_if_debug(ply) };
+
+        let raw_eval: i32 = stack_entry.raw_eval.unwrap_or_else(|| {
+            let raw_eval: i32 = {
+                let stm: Color = self.pos.side_to_move();
+                let both_accs: &mut BothAccumulators = self.update_both_accs(accs_idx);
+                value_eval(both_accs, stm).clamp(-MIN_MATE_SCORE + 1, MIN_MATE_SCORE - 1)
+            };
+
+            let stack_entry: &mut StackEntry = unsafe { self.stack.get_mut_checked_if_debug(ply) };
+            *(stack_entry.raw_eval.insert(raw_eval))
+        });
+
+        let mut correction: i32 = *(self.pawns_kings_corr()) as i32;
+
+        correction += *(self.non_pawns_corr(Color::White)) as i32;
+        correction += *(self.non_pawns_corr(Color::Black)) as i32;
+
+        if let Some(last_move_corr) = self.last_move_corr() {
+            correction += (*last_move_corr as i32) / 2;
+        }
+
+        (raw_eval + correction / 100).clamp(-MIN_MATE_SCORE + 1, MIN_MATE_SCORE - 1)
+    }
+
     pub fn pawns_kings_corr(&mut self) -> &mut i16 {
         let idx: usize = self.pos.pawns_kings_hash() as usize % CORR_HIST_SIZE;
         unsafe { self.pawns_kings_corr_hist[self.pos.side_to_move()].get_unchecked_mut(idx) }
@@ -111,32 +141,13 @@ impl ThreadData {
         }
     }
 
-    fn eval_correction(&mut self) -> i32 {
-        let pawns_kings_corr: i32 = *(self.pawns_kings_corr()) as i32;
-        let w_non_pawns_corr: i32 = *(self.non_pawns_corr(Color::White)) as i32;
-        let b_non_pawns_corr: i32 = *(self.non_pawns_corr(Color::Black)) as i32;
-
-        (pawns_kings_corr + w_non_pawns_corr + b_non_pawns_corr) / 100
-    }
-
-    // Returns static eval if cached, else computes it, caches it, and returns it
-    pub fn static_eval(&mut self, ply: usize, accs_idx: usize) -> i32 {
-        let stack_entry: &StackEntry = unsafe { self.stack.get_checked_if_debug(ply) };
-
-        if let Some(raw_eval) = stack_entry.raw_eval {
-            return raw_eval + self.eval_correction();
-        }
-
-        let raw_eval: i32 = {
+    pub fn last_move_corr(&mut self) -> Option<&mut i16> {
+        if let Some(last_move) = self.pos.last_move() {
             let stm: Color = self.pos.side_to_move();
-            let both_accs: &mut BothAccumulators = self.update_both_accs(accs_idx);
-            value_eval(both_accs, stm).clamp(-MIN_MATE_SCORE + 1, MIN_MATE_SCORE - 1)
-        };
-
-        let stack_entry: &mut StackEntry = unsafe { self.stack.get_mut_checked_if_debug(ply) };
-        stack_entry.raw_eval = Some(raw_eval);
-
-        raw_eval + self.eval_correction()
+            Some(&mut self.last_move_corr_hist[stm][last_move.piece_type()][last_move.dst()])
+        } else {
+            None
+        }
     }
 
     // Update principal variation

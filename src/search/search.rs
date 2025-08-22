@@ -472,6 +472,10 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         update_history(td.pawns_kings_corr(), bonus);
         update_history(td.non_pawns_corr(Color::White), bonus);
         update_history(td.non_pawns_corr(Color::Black), bonus);
+
+        if let Some(last_move_corr) = td.last_move_corr() {
+            update_history(last_move_corr, bonus);
+        }
     }
 
     best_score
