@@ -274,7 +274,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
     tt_move = singular_move.or_else(|| tt_move.filter(|tt_mov| legal_moves.contains(tt_mov)));
 
     // IIR (Internal iterative reduction)
-    if depth >= 4 && tt_move.is_none() {
+    if PV_NODE && depth >= 4 && tt_move.is_none() {
         depth -= 1;
     }
 
