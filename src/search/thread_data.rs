@@ -5,7 +5,6 @@ use crate::nn::{accumulator::BothAccumulators, value_policy_heads::value_eval};
 use arrayvec::ArrayVec;
 use debug_unwraps::DebugUnwrapExt;
 use std::array::from_fn;
-use std::num::NonZeroU16;
 
 pub struct StackEntry {
     pub(crate) pv: ArrayVec<ChessMove, { MAX_DEPTH as usize + 1 }>, // Principal variation
@@ -23,7 +22,7 @@ pub struct ThreadData {
     pub(crate) lmr_table: [[i32; 256]; MAX_DEPTH as usize + 1], // [depth][moves_seen]
     pawns_kings_corr_hist: [[i16; CORR_HIST_SIZE]; 2],      // [stm]
     non_pawns_corr_hist: [[[i16; CORR_HIST_SIZE]; 2]; 2],   // [stm][piece_color][color_pieces_hash]
-    last_move_corr_hist: [[i16; u16::MAX as usize]; 2],     // [stm][last_move]
+    last_move_corr_hist: [[[i16; 64]; 6]; 2], // [stm][last_move_piece_type][last_move_dst]
 }
 
 impl ThreadData {
@@ -54,7 +53,7 @@ impl ThreadData {
             lmr_table,
             pawns_kings_corr_hist: [[0; CORR_HIST_SIZE]; 2],
             non_pawns_corr_hist: [[[0; CORR_HIST_SIZE]; 2]; 2],
-            last_move_corr_hist: [[0; u16::MAX as usize]; 2],
+            last_move_corr_hist: [[[0; 64]; 6]; 2],
         }
     }
 
@@ -62,7 +61,7 @@ impl ThreadData {
         self.pos = Position::try_from(FEN_START).unwrap();
         self.pawns_kings_corr_hist = [[0; CORR_HIST_SIZE]; 2];
         self.non_pawns_corr_hist = [[[0; CORR_HIST_SIZE]; 2]; 2];
-        self.last_move_corr_hist = [[0; u16::MAX as usize]; 2];
+        self.last_move_corr_hist = [[[0; 64]; 6]; 2];
     }
 
     pub fn make_move(&mut self, mov: Option<ChessMove>, ply_before: u32, accs_idx_before: usize) {
@@ -146,9 +145,7 @@ impl ThreadData {
     pub fn last_move_corr(&mut self) -> Option<&mut i16> {
         if let Some(last_move) = self.pos.last_move() {
             let stm: Color = self.pos.side_to_move();
-            let idx: usize = NonZeroU16::from(last_move).get() as usize;
-
-            unsafe { Some(self.last_move_corr_hist[stm].get_mut_checked_if_debug(idx)) }
+            Some(&mut self.last_move_corr_hist[stm][last_move.piece_type()][last_move.dst()])
         } else {
             None
         }
