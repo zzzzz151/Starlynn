@@ -39,6 +39,7 @@ impl Position {
             pub fn piece_type_captured_by(&self, mov: ChessMove) -> Option<PieceType>;
             pub fn in_check(&self) -> bool;
             pub fn zobrist_hash(&self) -> u64;
+            pub fn non_pawns_hash(&self, piece_color: Color) -> u64;
             pub fn at(&self, sq: Square) -> Option<PieceType>;
             pub fn color_at(&self, sq: Square) -> Option<Color>;
             pub fn king_square(&self, color: Color) -> Square;

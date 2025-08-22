@@ -22,6 +22,7 @@ pub struct PosState {
     pt_captured: Option<PieceType>,
     checkers: Bitboard,
     zobrist_hash: u64,
+    non_pawns_hash: [u64; 2], // [piece_color]
 }
 
 impl Eq for PosState {}
@@ -37,7 +38,8 @@ impl PartialEq for PosState {
         self.plies_since_pawn_or_capture == other.plies_since_pawn_or_capture &&
         self.move_counter == other.move_counter &&
         self.checkers == other.checkers &&
-        self.zobrist_hash == other.zobrist_hash
+        self.zobrist_hash == other.zobrist_hash &&
+        self.non_pawns_hash == other.non_pawns_hash
     }
 }
 
@@ -63,6 +65,7 @@ impl TryFrom<&str> for PosState {
             pt_captured: None,
             checkers: Bitboard::from(0),
             zobrist_hash: 0,
+            non_pawns_hash: [0, 0],
         };
 
         let pieces_by_rank: Vec<&str> = split_ws[0].split('/').collect();
@@ -213,6 +216,10 @@ impl PosState {
         self.zobrist_hash
     }
 
+    pub fn non_pawns_hash(&self, piece_color: Color) -> u64 {
+        self.non_pawns_hash[piece_color]
+    }
+
     pub fn at(&self, sq: Square) -> Option<PieceType> {
         if !self.occupancy().contains(sq) {
             return None;
@@ -268,7 +275,12 @@ impl PosState {
     fn toggle_piece(&mut self, color: Color, pt: PieceType, sq: Square) {
         self.color_bbs[color] ^= Bitboard::from(sq);
         self.piece_bbs[pt] ^= Bitboard::from(sq);
+
         self.zobrist_hash ^= ZOBRIST_PIECES[color][pt][sq];
+
+        if pt != PieceType::Pawn {
+            self.non_pawns_hash[color] ^= ZOBRIST_PIECES[color][pt][sq];
+        }
     }
 
     pub fn fen(&self) -> String {

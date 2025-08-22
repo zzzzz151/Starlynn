@@ -1,4 +1,4 @@
-use super::params::{MAX_DEPTH, MIN_MATE_SCORE};
+use super::params::{CORR_HIST_SIZE, MAX_DEPTH, MIN_MATE_SCORE};
 use crate::GetCheckedIfDebug;
 use crate::chess::{chess_move::ChessMove, position::Position, types::Color, util::FEN_START};
 use crate::nn::{accumulator::BothAccumulators, value_policy_heads::value_eval};
@@ -9,7 +9,7 @@ use std::array::from_fn;
 pub struct StackEntry {
     pub(crate) pv: ArrayVec<ChessMove, { MAX_DEPTH as usize + 1 }>, // Principal variation
     pub(crate) both_accs: BothAccumulators,
-    pub(crate) static_eval: Option<i32>,
+    pub(crate) raw_eval: Option<i32>,
     // pub(crate) scored_moves: Option<ScoredMoves>
 }
 
@@ -20,6 +20,7 @@ pub struct ThreadData {
     pub(crate) sel_depth: u32,
     pub(crate) stack: [StackEntry; MAX_DEPTH as usize + 1],
     pub(crate) lmr_table: [[i32; 256]; MAX_DEPTH as usize + 1],
+    non_pawns_corr_hist: [[[i16; CORR_HIST_SIZE]; 2]; 2], // [stm][piece_color][color_pieces_hash]
 }
 
 impl ThreadData {
@@ -45,10 +46,16 @@ impl ThreadData {
             stack: from_fn(|_| StackEntry {
                 pv: ArrayVec::new_const(),
                 both_accs: BothAccumulators::new(),
-                static_eval: None,
+                raw_eval: None,
             }),
             lmr_table,
+            non_pawns_corr_hist: [[[0; CORR_HIST_SIZE]; 2]; 2],
         }
+    }
+
+    pub fn ucinewgame(&mut self) {
+        self.pos = Position::try_from(FEN_START).unwrap();
+        self.non_pawns_corr_hist = [[[0; CORR_HIST_SIZE]; 2]; 2];
     }
 
     pub fn make_move(&mut self, mov: Option<ChessMove>, ply_before: u32, accs_idx_before: usize) {
@@ -66,7 +73,7 @@ impl ThreadData {
                 self.stack.get_mut_checked_if_debug(ply_before as usize + 1);
 
             new_stack_entry.pv.clear();
-            new_stack_entry.static_eval = None;
+            new_stack_entry.raw_eval = None;
 
             self.stack
                 .get_mut_checked_if_debug(accs_idx_before + 1)
@@ -88,22 +95,39 @@ impl ThreadData {
         both_accs
     }
 
+    pub fn non_pawns_corr(&mut self, piece_color: Color) -> &mut i16 {
+        let idx: usize = self.pos.non_pawns_hash(piece_color) as usize % CORR_HIST_SIZE;
+
+        unsafe {
+            self.non_pawns_corr_hist[self.pos.side_to_move()][piece_color].get_unchecked_mut(idx)
+        }
+    }
+
+    fn eval_correction(&mut self) -> i32 {
+        let non_pawns_corr: i32 =
+            *self.non_pawns_corr(Color::White) as i32 + (*self.non_pawns_corr(Color::Black) as i32);
+
+        non_pawns_corr / 100
+    }
+
     // Returns static eval if cached, else computes it, caches it, and returns it
     pub fn static_eval(&mut self, ply: usize, accs_idx: usize) -> i32 {
         let stack_entry: &StackEntry = unsafe { self.stack.get_checked_if_debug(ply) };
 
-        if let Some(static_eval) = stack_entry.static_eval {
-            return static_eval;
+        if let Some(raw_eval) = stack_entry.raw_eval {
+            return raw_eval + self.eval_correction();
         }
 
-        let static_eval: i32 = {
+        let raw_eval: i32 = {
             let stm: Color = self.pos.side_to_move();
             let both_accs: &mut BothAccumulators = self.update_both_accs(accs_idx);
             value_eval(both_accs, stm).clamp(-MIN_MATE_SCORE + 1, MIN_MATE_SCORE - 1)
         };
 
         let stack_entry: &mut StackEntry = unsafe { self.stack.get_mut_checked_if_debug(ply) };
-        *(stack_entry.static_eval.insert(static_eval))
+        stack_entry.raw_eval = Some(raw_eval);
+
+        raw_eval + self.eval_correction()
     }
 
     // Update principal variation
