@@ -22,6 +22,7 @@ pub struct PosState {
     pt_captured: Option<PieceType>,
     checkers: Bitboard,
     zobrist_hash: u64,
+    pawns_kings_hash: u64,
     non_pawns_hash: [u64; 2], // [piece_color]
 }
 
@@ -39,6 +40,7 @@ impl PartialEq for PosState {
         self.move_counter == other.move_counter &&
         self.checkers == other.checkers &&
         self.zobrist_hash == other.zobrist_hash &&
+        self.pawns_kings_hash == other.pawns_kings_hash &&
         self.non_pawns_hash == other.non_pawns_hash
     }
 }
@@ -65,6 +67,7 @@ impl TryFrom<&str> for PosState {
             pt_captured: None,
             checkers: Bitboard::from(0),
             zobrist_hash: 0,
+            pawns_kings_hash: 0,
             non_pawns_hash: [0, 0],
         };
 
@@ -216,6 +219,10 @@ impl PosState {
         self.zobrist_hash
     }
 
+    pub const fn pawns_kings_hash(&self) -> u64 {
+        self.pawns_kings_hash
+    }
+
     pub fn non_pawns_hash(&self, piece_color: Color) -> u64 {
         self.non_pawns_hash[piece_color]
     }
@@ -276,10 +283,15 @@ impl PosState {
         self.color_bbs[color] ^= Bitboard::from(sq);
         self.piece_bbs[pt] ^= Bitboard::from(sq);
 
-        self.zobrist_hash ^= ZOBRIST_PIECES[color][pt][sq];
+        let xor: u64 = ZOBRIST_PIECES[color][pt][sq];
+        self.zobrist_hash ^= xor;
+
+        if pt == PieceType::Pawn || pt == PieceType::King {
+            self.pawns_kings_hash ^= xor;
+        }
 
         if pt != PieceType::Pawn {
-            self.non_pawns_hash[color] ^= ZOBRIST_PIECES[color][pt][sq];
+            self.non_pawns_hash[color] ^= xor;
         }
     }
 

@@ -18,9 +18,10 @@ pub struct ThreadData {
     pub(crate) nodes: u64,
     pub(crate) root_depth: i32,
     pub(crate) sel_depth: u32,
-    pub(crate) stack: [StackEntry; MAX_DEPTH as usize + 1],
-    pub(crate) lmr_table: [[i32; 256]; MAX_DEPTH as usize + 1],
-    non_pawns_corr_hist: [[[i16; CORR_HIST_SIZE]; 2]; 2], // [stm][piece_color][color_pieces_hash]
+    pub(crate) stack: [StackEntry; MAX_DEPTH as usize + 1], // [ply] or [accs_idx]
+    pub(crate) lmr_table: [[i32; 256]; MAX_DEPTH as usize + 1], // [depth][moves_seen]
+    pawns_kings_corr_hist: [[i16; CORR_HIST_SIZE]; 2],      // [stm]
+    non_pawns_corr_hist: [[[i16; CORR_HIST_SIZE]; 2]; 2],   // [stm][piece_color][color_pieces_hash]
 }
 
 impl ThreadData {
@@ -49,12 +50,14 @@ impl ThreadData {
                 raw_eval: None,
             }),
             lmr_table,
+            pawns_kings_corr_hist: [[0; CORR_HIST_SIZE]; 2],
             non_pawns_corr_hist: [[[0; CORR_HIST_SIZE]; 2]; 2],
         }
     }
 
     pub fn ucinewgame(&mut self) {
         self.pos = Position::try_from(FEN_START).unwrap();
+        self.pawns_kings_corr_hist = [[0; CORR_HIST_SIZE]; 2];
         self.non_pawns_corr_hist = [[[0; CORR_HIST_SIZE]; 2]; 2];
     }
 
@@ -95,6 +98,11 @@ impl ThreadData {
         both_accs
     }
 
+    pub fn pawns_kings_corr(&mut self) -> &mut i16 {
+        let idx: usize = self.pos.pawns_kings_hash() as usize % CORR_HIST_SIZE;
+        unsafe { self.pawns_kings_corr_hist[self.pos.side_to_move()].get_unchecked_mut(idx) }
+    }
+
     pub fn non_pawns_corr(&mut self, piece_color: Color) -> &mut i16 {
         let idx: usize = self.pos.non_pawns_hash(piece_color) as usize % CORR_HIST_SIZE;
 
@@ -104,10 +112,11 @@ impl ThreadData {
     }
 
     fn eval_correction(&mut self) -> i32 {
-        let non_pawns_corr: i32 =
-            *self.non_pawns_corr(Color::White) as i32 + (*self.non_pawns_corr(Color::Black) as i32);
+        let pawns_kings_corr: i32 = *(self.pawns_kings_corr()) as i32;
+        let w_non_pawns_corr: i32 = *(self.non_pawns_corr(Color::White)) as i32;
+        let b_non_pawns_corr: i32 = *(self.non_pawns_corr(Color::Black)) as i32;
 
-        non_pawns_corr / 100
+        (pawns_kings_corr + w_non_pawns_corr + b_non_pawns_corr) / 100
     }
 
     // Returns static eval if cached, else computes it, caches it, and returns it
