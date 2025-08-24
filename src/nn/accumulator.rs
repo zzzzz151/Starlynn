@@ -1,4 +1,4 @@
-use super::params::{FT_Q, HALF_HL_SIZE, NET};
+use super::params::{FT_Q, HL_SIZE, NET};
 use crate::chess::{chess_move::ChessMove, pos_state::PosState, position::Position, types::*};
 use debug_unwraps::DebugUnwrapExt;
 use std::mem::transmute;
@@ -29,8 +29,8 @@ fn get_feature_idx(
 #[repr(C, align(64))]
 #[derive(Clone)]
 pub struct BothAccumulators {
-    unactivated_accs: [[i16; HALF_HL_SIZE]; 2],
-    activated_accs: [[i16; HALF_HL_SIZE]; 2],
+    unactivated_accs: [[i16; HL_SIZE]; 2],
+    activated_accs: [[i16; HL_SIZE / 2]; 2],
     is_unactivated_updated: bool,
     is_activated_updated: bool,
 }
@@ -39,7 +39,7 @@ impl BothAccumulators {
     pub const fn new() -> Self {
         BothAccumulators {
             unactivated_accs: [NET.hl_b, NET.hl_b],
-            activated_accs: [[0; HALF_HL_SIZE]; 2],
+            activated_accs: [[0; HL_SIZE / 2]; 2],
             is_unactivated_updated: true,
             is_activated_updated: false,
         }
@@ -59,8 +59,7 @@ impl BothAccumulators {
                     sq,
                 );
 
-                let ft_weights: &[i16; HALF_HL_SIZE] =
-                    unsafe { NET.ft_w.get_unchecked(feature_idx) };
+                let ft_weights: &[i16; HL_SIZE] = unsafe { NET.ft_w.get_unchecked(feature_idx) };
 
                 for (x, w) in self.unactivated_accs[acc_color].iter_mut().zip(ft_weights) {
                     *x += *w;
@@ -91,11 +90,8 @@ impl BothAccumulators {
         self.is_activated_updated = false;
     }
 
-    // SCReLU activation
-    // clamp(x, 0.0, 1.0)^2
-    // clamp(x, 0, FT_Q)^2
-    // FT max weight/bias and FT_Q ensures the mul fits in i16
-    pub fn activated_accs(&mut self) -> &[[i16; HALF_HL_SIZE]; 2] {
+    // Activation is CReLU + pairwise mul
+    pub fn activated_accs(&mut self) -> &[[i16; HL_SIZE / 2]; 2] {
         assert!(self.is_unactivated_updated);
 
         if self.is_activated_updated {
@@ -103,10 +99,10 @@ impl BothAccumulators {
         }
 
         for (act_acc, unact_acc) in self.activated_accs.iter_mut().zip(&self.unactivated_accs) {
-            for i in 0..HALF_HL_SIZE {
-                let x: i16 = unact_acc[i].clamp(0, FT_Q);
-                debug_assert!((x as i32 * (x as i32)).abs() <= 32767);
-                act_acc[i] = unsafe { x.unchecked_mul(x) };
+            for i in 0..(HL_SIZE / 2) {
+                let x1: i16 = unact_acc[i * 2].clamp(0, FT_Q);
+                let x2: i16 = unact_acc[i * 2 + 1].clamp(0, FT_Q);
+                act_acc[i] = unsafe { x1.unchecked_mul(x2) };
             }
         }
 
@@ -218,15 +214,15 @@ impl From<&Position> for BothAccumulators {
 }
 
 fn update_castling(
-    acc: &mut [i16; HALF_HL_SIZE],
-    prev_acc: &[i16; HALF_HL_SIZE],
+    acc: &mut [i16; HL_SIZE],
+    prev_acc: &[i16; HL_SIZE],
     sub_king_idx: usize,
     add_king_idx: usize,
     sub_rook_idx: usize,
     add_rook_idx: usize,
 ) {
     unsafe {
-        for i in 0..HALF_HL_SIZE {
+        for i in 0..HL_SIZE {
             acc[i] = prev_acc[i] - NET.ft_w.get_unchecked(sub_king_idx)[i]
                 + NET.ft_w.get_unchecked(add_king_idx)[i]
                 - NET.ft_w.get_unchecked(sub_rook_idx)[i]
@@ -236,14 +232,14 @@ fn update_castling(
 }
 
 fn update_capture(
-    acc: &mut [i16; HALF_HL_SIZE],
-    prev_acc: &[i16; HALF_HL_SIZE],
+    acc: &mut [i16; HL_SIZE],
+    prev_acc: &[i16; HL_SIZE],
     sub_captured_idx: usize,
     add_piece_idx: usize,
     sub_piece_idx: usize,
 ) {
     unsafe {
-        for i in 0..HALF_HL_SIZE {
+        for i in 0..HL_SIZE {
             acc[i] = prev_acc[i] - NET.ft_w.get_unchecked(sub_captured_idx)[i]
                 + NET.ft_w.get_unchecked(add_piece_idx)[i]
                 - NET.ft_w.get_unchecked(sub_piece_idx)[i];
@@ -252,13 +248,13 @@ fn update_capture(
 }
 
 fn update_non_capture(
-    acc: &mut [i16; HALF_HL_SIZE],
-    prev_acc: &[i16; HALF_HL_SIZE],
+    acc: &mut [i16; HL_SIZE],
+    prev_acc: &[i16; HL_SIZE],
     sub_piece_idx: usize,
     add_piece_idx: usize,
 ) {
     unsafe {
-        for i in 0..HALF_HL_SIZE {
+        for i in 0..HL_SIZE {
             acc[i] = prev_acc[i] - NET.ft_w.get_unchecked(sub_piece_idx)[i]
                 + NET.ft_w.get_unchecked(add_piece_idx)[i];
         }
