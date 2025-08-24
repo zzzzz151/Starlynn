@@ -90,7 +90,7 @@ impl BothAccumulators {
         self.is_activated_updated = false;
     }
 
-    // Activation is CReLU + pairwise
+    // Activation is CReLU + pairwise mul
     pub fn activated_accs(&mut self) -> &[[i16; HL_SIZE / 2]; 2] {
         assert!(self.is_unactivated_updated);
 
