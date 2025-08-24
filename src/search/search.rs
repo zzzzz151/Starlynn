@@ -8,6 +8,7 @@ use crate::GetCheckedIfDebug;
 use crate::chess::{chess_move::ChessMove, move_gen::MovesList, position::Position, types::Color};
 use crate::nn::accumulator::BothAccumulators;
 use arrayvec::ArrayVec;
+use std::num::NonZeroU16;
 
 // Returns best move and nodes
 pub fn search<const PRINT_INFO: bool>(
@@ -17,13 +18,20 @@ pub fn search<const PRINT_INFO: bool>(
 ) -> (Option<ChessMove>, u64) {
     limits.max_duration_hit = false;
 
-    if td.pos.legal_moves().is_empty() {
+    let root_legal_moves: MovesList = td.pos.legal_moves();
+
+    if root_legal_moves.is_empty() {
         return (None, 1);
     }
 
     td.nodes = 1;
+
+    for mov in root_legal_moves {
+        td.nodes_by_move[NonZeroU16::from(mov).get() as usize] = 0;
+    }
+
     td.stack[0].pv.clear();
-    td.stack[0].both_accs = BothAccumulators::from(&td.pos);
+    td.stack[0].both_accs.build_accumulators(&td.pos);
     td.stack[0].raw_eval = None;
 
     let mut score: i32 = 0;
@@ -77,14 +85,33 @@ pub fn search<const PRINT_INFO: bool>(
             );
         }
 
-        // Stop searching if soft nodes limit hit or soft time limit hit
+        // Stop searching if nodes limit hit
         if limits
             .max_nodes
             .is_some_and(|max_nodes| td.nodes >= max_nodes.get())
-            || limits
-                .max_soft_duration
-                .is_some_and(|max_soft_dur| elapsed >= max_soft_dur)
         {
+            break;
+        }
+
+        // Stop searching if soft time limit hit
+        if limits.max_soft_duration.is_some_and(|mut max_soft_dur| {
+            if depth >= 6 {
+                // Nodes TM
+                // Less/more soft time the bigger/smaller the fraction of nodes spent on best move
+
+                let best_move: ChessMove = *(td.stack[0].pv.first().expect("Expected move"));
+
+                let best_move_nodes: u64 =
+                    td.nodes_by_move[NonZeroU16::from(best_move).get() as usize];
+
+                assert!(best_move_nodes <= td.nodes);
+
+                let nodes_fraction: f64 = best_move_nodes as f64 / (td.nodes as f64);
+                max_soft_dur = max_soft_dur.mul_f64(2.0 - nodes_fraction * 1.5)
+            }
+
+            elapsed >= max_soft_dur
+        }) {
             break;
         }
     }
@@ -351,6 +378,8 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
                 && s_score + 25 < s_beta) as i32;
         }
 
+        let nodes_before: u64 = td.nodes;
+
         td.make_move(Some(mov), ply, accs_idx);
 
         let mut score: i32 = 0;
@@ -419,6 +448,10 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         }
 
         td.pos.undo_move();
+
+        if IS_ROOT {
+            td.nodes_by_move[NonZeroU16::from(mov).get() as usize] += td.nodes - nodes_before;
+        }
 
         if limits.max_duration_hit {
             return 0;
