@@ -78,6 +78,14 @@ impl BothAccumulators {
         self.is_activated_updated = false;
     }
 
+    pub fn build_accumulators(&mut self, pos: &Position) {
+        for acc_color in [Color::White, Color::Black] {
+            self.build_accumulator(acc_color, pos);
+        }
+
+        self.is_unactivated_updated = true;
+    }
+
     pub fn set_not_updated(&mut self) {
         self.is_unactivated_updated = false;
         self.is_activated_updated = false;
@@ -204,8 +212,7 @@ impl BothAccumulators {
 impl From<&Position> for BothAccumulators {
     fn from(pos: &Position) -> Self {
         let mut both_accs = BothAccumulators::new();
-        both_accs.build_accumulator(Color::White, pos);
-        both_accs.build_accumulator(Color::Black, pos);
+        both_accs.build_accumulators(pos);
         both_accs
     }
 }

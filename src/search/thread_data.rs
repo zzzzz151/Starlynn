@@ -16,6 +16,7 @@ pub struct StackEntry {
 pub struct ThreadData {
     pub pos: Position,
     pub(crate) nodes: u64,
+    pub(crate) nodes_by_move: [u64; u16::MAX as usize],
     pub(crate) root_depth: i32,
     pub(crate) sel_depth: u32,
     pub(crate) stack: [StackEntry; MAX_DEPTH as usize + 1], // [ply] or [accs_idx]
@@ -43,6 +44,7 @@ impl ThreadData {
         ThreadData {
             pos: Position::try_from(FEN_START).unwrap(),
             nodes: 0,
+            nodes_by_move: [0; u16::MAX as usize],
             root_depth: 1,
             sel_depth: 0,
             stack: from_fn(|_| StackEntry {
