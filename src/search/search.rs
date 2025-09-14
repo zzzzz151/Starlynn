@@ -6,7 +6,12 @@ use super::tt::TT;
 use super::tt_entry::{Bound, TTEntry};
 use crate::GetCheckedIfDebug;
 use crate::chess::{chess_move::ChessMove, move_gen::MovesList, position::Position, types::Color};
-use crate::nn::accumulator::BothAccumulators;
+
+use crate::nn::{
+    accumulator::BothAccumulators, value_policy_heads::ScoredMoves,
+    value_policy_heads::get_policy_logits,
+};
+
 use arrayvec::ArrayVec;
 use std::num::NonZeroU16;
 
@@ -22,6 +27,26 @@ pub fn search<const PRINT_INFO: bool>(
 
     if root_legal_moves.is_empty() {
         return (None, 1);
+    }
+
+    // If max nodes is 1 ("go nodes 1"), return best move according to policy net
+    if limits
+        .max_nodes
+        .is_some_and(|max_nodes| max_nodes.get() == 1)
+    {
+        let mut both_accs = BothAccumulators::from(&td.pos);
+
+        let logits: ScoredMoves =
+            get_policy_logits::<false>(&mut both_accs, &td.pos, &td.pos.legal_moves(), None);
+
+        let (best_move, _) = logits
+            .into_iter()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .expect("Expected a move");
+
+        println!("info depth 0 seldepth 0 nodes 1 nps 1000 time 0 pv {best_move}");
+
+        return (Some(best_move), 1);
     }
 
     td.nodes = 1;
