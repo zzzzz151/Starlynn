@@ -1,9 +1,9 @@
 use std::mem::transmute;
 
 pub const HL_SIZE: usize = 128;
+pub const POLICY_OUTPUT_SIZE: usize = 6 * 64 * 6; // Piece type moved, dst square, piece type captured
 pub const FT_Q: i16 = 181;
 pub const VALUE_SCALE: i32 = 400;
-pub const POLICY_OUTPUT_SIZE: usize = 6 * 64 * 6; // Piece type moved, dst square, piece type captured
 
 #[repr(C, align(64))]
 pub struct Net {

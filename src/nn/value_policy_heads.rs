@@ -51,6 +51,8 @@ pub fn get_policy_logits<const Q_SEARCH: bool>(
             dst_for_logit_idx = dst_for_logit_idx.rank_flipped();
         }
 
+        // Underpromotions are encoded as pawn promotes in rank 1
+        // which typically are unused logits since it's always white to play in an oriented board
         if mov
             .promotion()
             .is_some_and(|promo_pt| promo_pt != PieceType::Queen)
@@ -58,6 +60,8 @@ pub fn get_policy_logits<const Q_SEARCH: bool>(
             dst_for_logit_idx = dst_for_logit_idx.rank_flipped();
         }
 
+        // Mirror pieces along vertical axis if stm king on left side of board
+        // so that stm king is always on right side of board
         if king_sq.file() < File::E {
             dst_for_logit_idx = dst_for_logit_idx.file_flipped();
         }
