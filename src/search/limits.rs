@@ -38,7 +38,7 @@ impl SearchLimits {
     ) -> bool {
         if root_depth <= 1 {
             self.max_duration_hit = false;
-        } else if IS_ROOT || nodes % 1024 == 0 {
+        } else if IS_ROOT || nodes.is_multiple_of(1024) {
             self.max_duration_hit = self
                 .max_duration
                 .is_some_and(|max_dur| self.start_time.elapsed() >= max_dur);
