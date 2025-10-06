@@ -1,8 +1,4 @@
-use std::fs::File;
-use std::io::Write;
-use std::mem::size_of;
 use std::num::NonZeroU32;
-use std::slice::from_raw_parts;
 use std::time::{Duration, Instant};
 
 use crate::chess::{
@@ -13,7 +9,7 @@ use crate::chess::{
     util::FEN_START,
 };
 
-use crate::nn::{accumulator::BothAccumulators, moves_map::map_moves_1880, value_policy_heads::*};
+use crate::nn::{accumulator::BothAccumulators, value_policy_heads::*};
 
 use crate::search::{
     bench::{DEFAULT_BENCH_DEPTH, bench},
@@ -127,27 +123,6 @@ pub fn run_command(command: &str, td: &mut ThreadData, tt: &mut TT) {
         }
         "tt" | "TT" | "hash" | "Hash" | "hashfull" | "Hashfull" => {
             tt.print_fullness::<false>();
-        }
-        "mapmoves1880" | "map_moves_1880" | "movesmap1880" | "moves_map_1880" => {
-            let out_file_name: &str = split_ws.get(1).unwrap_or(&"moves_map_1880.bin");
-
-            let mut out_file: File = File::create(out_file_name)
-                .unwrap_or_else(|_| panic!("Failed to create file {out_file_name}"));
-
-            let moves_map_1880: [[[i16; 7]; 64]; 64] = map_moves_1880();
-
-            let byte_slice: &[u8] = unsafe {
-                from_raw_parts(
-                    moves_map_1880.as_ptr() as *const u8,
-                    size_of::<[[[i16; 7]; 64]; 64]>(),
-                )
-            };
-
-            out_file
-                .write_all(byte_slice)
-                .unwrap_or_else(|_| panic!("Failed to write to file {out_file_name}"));
-
-            println!("Sucessfully wrote {out_file_name}");
         }
         _ => {}
     }
