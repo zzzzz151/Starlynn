@@ -91,8 +91,7 @@ tunable_params! {
     tm_nodes_base: f64 = 2.0, 1.5, 2.0, 0.1;
     tm_nodes_mul: f64 = 1.5, 1.0, 1.5, 0.1;
     pawn_value: i32 = 100, 50, 150, 50;
-    knight_value: i32 = 300, 200, 400, 50;
-    bishop_value: i32 = 300, 200, 400, 50;
+    minor_piece_value: i32 = 300, 200, 400, 50;
     rook_value: i32 = 500, 400, 600, 50;
     queen_value: i32 = 900, 600, 1200, 100;
     asp_initial: i32 = 16, 5, 25, 5;
@@ -115,8 +114,7 @@ tunable_params! {
 pub const fn get_value(pt: PieceType) -> i32 {
     match pt {
         PieceType::Pawn => pawn_value(),
-        PieceType::Knight => knight_value(),
-        PieceType::Bishop => bishop_value(),
+        PieceType::Knight | PieceType::Bishop => minor_piece_value(),
         PieceType::Rook => rook_value(),
         PieceType::Queen => queen_value(),
         PieceType::King => 0,
@@ -127,8 +125,7 @@ pub const fn get_value(pt: PieceType) -> i32 {
 pub fn get_value(pt: PieceType) -> i32 {
     match pt {
         PieceType::Pawn => pawn_value(),
-        PieceType::Knight => knight_value(),
-        PieceType::Bishop => bishop_value(),
+        PieceType::Knight | PieceType::Bishop => minor_piece_value(),
         PieceType::Rook => rook_value(),
         PieceType::Queen => queen_value(),
         PieceType::King => 0,
