@@ -64,11 +64,21 @@ macro_rules! tunable_params {
         #[allow(clippy::print_with_newline)]
         pub fn print_params_options() {
             $(
+            let format_number = |number| {
+                if stringify!($type) == "f32" || stringify!($type) == "f64" {
+                    format!("{:.4}", number)
+                } else {
+                    format!("{}", number)
+                }
+            };
+
+            let value: $type = unsafe { tuned_params::$name };
+
             print!("option name {} type string default {} min {} max {}\n",
                 stringify!($name),
-                unsafe { tuned_params::$name },
-                $min,
-                $max,
+                format_number(value),
+                format_number($min),
+                format_number($max)
             );
             )*
         }
