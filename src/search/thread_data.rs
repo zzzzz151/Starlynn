@@ -1,4 +1,4 @@
-use super::params::{CORR_HIST_SIZE, MAX_DEPTH, MIN_MATE_SCORE};
+use super::params::*;
 use crate::GetCheckedIfDebug;
 use crate::chess::{chess_move::ChessMove, position::Position, types::Color, util::FEN_START};
 use crate::nn::{accumulator::BothAccumulators, value_policy_heads::value_eval};
@@ -20,27 +20,14 @@ pub struct ThreadData {
     pub(crate) root_depth: i32,
     pub(crate) sel_depth: u32,
     pub(crate) stack: [StackEntry; MAX_DEPTH as usize + 1], // [ply] or [accs_idx]
-    pub(crate) lmr_table: [[i32; 256]; MAX_DEPTH as usize + 1], // [depth][moves_seen]
-    pawns_kings_corr_hist: [[i16; CORR_HIST_SIZE]; 2],      // [stm]
-    non_pawns_corr_hist: [[[i16; CORR_HIST_SIZE]; 2]; 2],   // [stm][piece_color][color_pieces_hash]
+    pub(crate) lmr_table: [[[i32; 2]; 256]; MAX_DEPTH as usize + 1], // [depth][moves_seen][is_noisy]
+    pawns_kings_corr_hist: [[i16; CORR_HIST_SIZE]; 2],               // [stm]
+    non_pawns_corr_hist: [[[i16; CORR_HIST_SIZE]; 2]; 2], // [stm][piece_color][color_pieces_hash]
     last_move_corr_hist: [[[i16; 64]; 6]; 2], // [stm][last_move_piece_type][last_move_dst]
 }
 
 impl ThreadData {
     pub fn new() -> Self {
-        // Compute base LMR
-        let lmr_table = from_fn(|depth| {
-            from_fn(|moves_seen| {
-                if depth == 0 || moves_seen == 0 {
-                    0
-                } else {
-                    let a: f64 = (depth as f64).ln();
-                    let b: f64 = (moves_seen as f64).ln();
-                    (0.8 + a * b * 0.4).round() as i32
-                }
-            })
-        });
-
         ThreadData {
             pos: Position::try_from(FEN_START).unwrap(),
             nodes: 0,
@@ -52,7 +39,7 @@ impl ThreadData {
                 both_accs: BothAccumulators::new(),
                 raw_eval: None,
             }),
-            lmr_table,
+            lmr_table: get_lmr_table(),
             pawns_kings_corr_hist: [[0; CORR_HIST_SIZE]; 2],
             non_pawns_corr_hist: [[[0; CORR_HIST_SIZE]; 2]; 2],
             last_move_corr_hist: [[[0; 64]; 6]; 2],
@@ -118,16 +105,18 @@ impl ThreadData {
             *(stack_entry.raw_eval.insert(raw_eval))
         });
 
-        let mut correction: i32 = *(self.pawns_kings_corr()) as i32;
+        let mut correction: f32 = *(self.pawns_kings_corr()) as f32 * corr_hist_pk_weight();
 
-        correction += *(self.non_pawns_corr(Color::White)) as i32;
-        correction += *(self.non_pawns_corr(Color::Black)) as i32;
+        correction += *(self.non_pawns_corr(Color::White)) as f32 * corr_hist_nbrqk_weight();
+        correction += *(self.non_pawns_corr(Color::Black)) as f32 * corr_hist_nbrqk_weight();
 
         if let Some(last_move_corr) = self.last_move_corr() {
-            correction += (*last_move_corr as i32) / 2;
+            correction += *last_move_corr as f32 * corr_hist_last_move_weight();
         }
 
-        (raw_eval + correction / 100).clamp(-MIN_MATE_SCORE + 1, MIN_MATE_SCORE - 1)
+        correction /= 100.0;
+
+        (raw_eval + (correction.round() as i32)).clamp(-MIN_MATE_SCORE + 1, MIN_MATE_SCORE - 1)
     }
 
     pub fn pawns_kings_corr(&mut self) -> &mut i16 {

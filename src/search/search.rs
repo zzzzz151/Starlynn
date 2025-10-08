@@ -132,7 +132,9 @@ pub fn search<const PRINT_INFO: bool>(
                 assert!(best_move_nodes <= td.nodes);
 
                 let nodes_fraction: f64 = best_move_nodes as f64 / (td.nodes as f64);
-                max_soft_dur = max_soft_dur.mul_f64(2.0 - nodes_fraction * 1.5)
+
+                max_soft_dur =
+                    max_soft_dur.mul_f64(tm_nodes_base() - nodes_fraction * tm_nodes_mul())
             }
 
             elapsed >= max_soft_dur
@@ -154,7 +156,7 @@ fn aspiration_windows(
 ) -> i32 {
     debug_assert!(depth > 1);
 
-    let mut delta: i32 = 16;
+    let mut delta: i32 = asp_initial();
 
     let (mut alpha, mut beta) = if score <= -MIN_MATE_SCORE {
         (-INF, -MIN_MATE_SCORE + 1)
@@ -275,12 +277,14 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
     // Node pruning
     if !PV_NODE && !td.pos.in_check() && singular_move.is_none() {
         // RFP (reverse futility pruning)
-        if depth <= 7 && beta.abs() < MIN_MATE_SCORE && eval - depth * 75 >= beta {
+        if depth <= 7 && beta.abs() < MIN_MATE_SCORE && eval - depth * rfp_mul() >= beta {
             return (eval + beta) / 2;
         }
 
         // Razoring
-        if alpha.abs() < MIN_MATE_SCORE && eval + 350 + depth * depth * 275 <= alpha {
+        if alpha.abs() < MIN_MATE_SCORE
+            && eval + razoring_base() + depth * depth * razoring_mul() <= alpha
+        {
             return q_search::<PV_NODE>(limits, td, tt, ply, alpha, beta, accs_idx);
         }
 
@@ -369,7 +373,10 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
             }
 
             // SEE pruning
-            let threshold: i32 = if is_quiet_or_underpromo { -50 } else { -100 };
+
+            let threshold: i32 =
+                [see_threshold_noisy(), see_threshold_quiet()][is_quiet_or_underpromo as usize];
+
             if td.pos.has_nbrq(td.pos.side_to_move()) && !td.pos.see_ge(mov, depth * threshold) {
                 continue;
             }
@@ -409,7 +416,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
             new_depth += (!PV_NODE
                 && depth < MAX_DEPTH
                 && s_score > -MIN_MATE_SCORE
-                && s_score + 25 < s_beta) as i32;
+                && s_score + double_ext_margin() < s_beta) as i32;
         }
 
         let nodes_before: u64 = td.nodes;
@@ -425,9 +432,10 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
 
             // Base reduction
             reduced_depth -= unsafe {
-                *td.lmr_table
+                td.lmr_table
                     .get_checked_if_debug(depth as usize)
                     .get_checked_if_debug(moves_seen)
+                    .get_checked_if_debug(!is_quiet_or_underpromo as usize)
             };
 
             // Reduction adjustments
