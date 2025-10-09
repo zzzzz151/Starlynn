@@ -359,6 +359,15 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
                 continue;
             }
 
+            // FP (futility pruning)
+            if depth <= 7
+                && moves_seen > 2
+                && alpha.abs() < MIN_MATE_SCORE
+                && eval + 120 + depth * 120 <= alpha
+            {
+                continue;
+            }
+
             // SEE pruning
             let threshold: i32 = if is_quiet_or_underpromo { -50 } else { -100 };
             if td.pos.has_nbrq(td.pos.side_to_move()) && !td.pos.see_ge(mov, depth * threshold) {
