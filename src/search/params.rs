@@ -123,8 +123,8 @@ tunable_params! {
     rfp_mul: i32 = 75, 30, 130, 10;
     razoring_base: i32 = 350, 200, 600, 40;
     razoring_mul: i32 = 275, 200, 600, 10;
-    fp_base: i32 = 120, 50, 260, 30;
-    fp_mul: i32 = 120, 50, 260, 10;
+    fp_base: i32 = 120, 60, 260, 20;
+    fp_mul: i32 = 120, 60, 260, 10;
     see_threshold_noisy: i32 = -100, -210, -10, 20;
     see_threshold_quiet: i32 = -50, -210, -10, 20;
     double_ext_margin: i32 = 25, 1, 51, 10;
