@@ -40,7 +40,7 @@ impl TT {
         let percentage: f64 = num_occupied as f64 * 100.0 / (self.0.len() as f64);
 
         println!(
-            "{}TT fullness: {num_occupied}/{} ({:.1}%)",
+            "{}TT: {num_occupied}/{} ({:.1}%)",
             ["", "Bench "][IS_BENCH as usize],
             self.0.len(),
             percentage
