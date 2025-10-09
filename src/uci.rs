@@ -112,6 +112,10 @@ pub fn run_command(command: &str, td: &mut ThreadData, tt: &mut TT) {
         "tt" | "TT" | "hash" | "Hash" | "hashfull" | "Hashfull" => {
             tt.print_fullness::<false>();
         }
+        #[cfg(feature = "tune")]
+        "print_params_openbench" => {
+            print_params_openbench();
+        }
         _ => {}
     }
 }

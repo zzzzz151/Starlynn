@@ -367,7 +367,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
             if depth <= 7
                 && moves_seen > 2
                 && alpha.abs() < MIN_MATE_SCORE
-                && eval + 120 + depth * 120 <= alpha
+                && eval + fp_base() + depth * fp_mul() <= alpha
             {
                 continue;
             }

@@ -61,17 +61,21 @@ macro_rules! tunable_params {
         }
 
         #[cfg(feature = "tune")]
+        fn format_number<T: 'static + std::fmt::Display>(number: T) -> String {
+            use std::any::TypeId;
+
+            if TypeId::of::<T>() == TypeId::of::<f32>()
+                || TypeId::of::<T>() == TypeId::of::<f64>() {
+                format!("{:.4}", number)
+            } else {
+                format!("{}", number)
+            }
+        }
+
+        #[cfg(feature = "tune")]
         #[allow(clippy::print_with_newline)]
         pub fn print_params_options() {
             $(
-            let format_number = |number| {
-                if stringify!($type) == "f32" || stringify!($type) == "f64" {
-                    format!("{:.4}", number)
-                } else {
-                    format!("{}", number)
-                }
-            };
-
             let value: $type = unsafe { tuned_params::$name };
 
             print!("option name {} type string default {} min {} max {}\n",
@@ -81,6 +85,28 @@ macro_rules! tunable_params {
                 format_number($max)
             );
             )*
+        }
+
+        #[cfg(feature = "tune")]
+        #[allow(clippy::print_with_newline)]
+        pub fn print_params_openbench() {
+            use std::io::{self, Write};
+
+            $(
+            let is_float: bool = stringify!($type) == "f32" || stringify!($type) == "f64";
+            let value: $type = unsafe { tuned_params::$name };
+
+            print!("{}, {}, {}, {}, {}, {}, 0.002\n",
+                stringify!($name),
+                if is_float { "float" } else { "int" },
+                format_number(value),
+                format_number($min),
+                format_number($max),
+                format_number($step)
+            );
+            )*
+
+            io::stdout().flush().unwrap();
         }
     };
 }
@@ -98,6 +124,8 @@ tunable_params! {
     rfp_mul: i32 = 75, 30, 130, 10;
     razoring_base: i32 = 350, 200, 600, 40;
     razoring_mul: i32 = 275, 200, 600, 10;
+    fp_base: i32 = 120, 50, 260, 30;
+    fp_mul: i32 = 120, 50, 260, 10;
     see_threshold_noisy: i32 = -100, -210, -10, 20;
     see_threshold_quiet: i32 = -50, -210, -10, 20;
     double_ext_margin: i32 = 25, 1, 51, 10;
