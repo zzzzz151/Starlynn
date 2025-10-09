@@ -94,12 +94,11 @@ macro_rules! tunable_params {
 
             $(
             let is_float: bool = stringify!($type) == "f32" || stringify!($type) == "f64";
-            let value: $type = unsafe { tuned_params::$name };
 
             print!("{}, {}, {}, {}, {}, {}, 0.002\n",
                 stringify!($name),
                 if is_float { "float" } else { "int" },
-                format_number(value),
+                format_number($value),
                 format_number($min),
                 format_number($max),
                 format_number($step)
