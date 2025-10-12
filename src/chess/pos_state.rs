@@ -964,6 +964,13 @@ mod tests {
 
     #[test]
     fn test_see() {
+        use crate::search::params::set_tunable_param;
+
+        assert!(set_tunable_param("pawn_value", "100"));
+        assert!(set_tunable_param("minor_piece_value", "300"));
+        assert!(set_tunable_param("rook_value", "500"));
+        assert!(set_tunable_param("queen_value", "900"));
+
         #[rustfmt::skip]
         let test_suite = [
             ("6k1/1pp4p/p1pb4/6q1/3P1pRr/2P4P/PP1Br1P1/5RKN w - -", "f1f4", -100),
