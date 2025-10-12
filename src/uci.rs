@@ -13,11 +13,15 @@ use crate::nn::{accumulator::BothAccumulators, value_policy_heads::*};
 
 use crate::search::{
     bench::{DEFAULT_BENCH_DEPTH, bench},
-    limits::{HARD_TIME_PERCENTAGE, SOFT_TIME_PERCENTAGE, SearchLimits},
+    limits::SearchLimits,
+    params::{tm_hard_percent, tm_soft_percent},
     search::search,
     thread_data::ThreadData,
     tt::TT,
 };
+
+#[cfg(feature = "tune")]
+use crate::search::params::*;
 
 const OVERHEAD_MS: u64 = 20;
 
@@ -36,33 +40,17 @@ pub fn run_command(command: &str, td: &mut ThreadData, tt: &mut TT) {
     match split_ws[0] {
         // UCI commands
         "uci" => {
-            print!("id name Starlynn");
-            print!("\nid name zzzzz");
-            print!("\noption name Hash type spin default 32 min 1 max 131072");
-            print!("\noption name Threads type spin default 1 min 1 max 1");
-            println!("\nuciok");
-        }
-        "setoption" => {
-            let name: &str = split_ws
-                .iter()
-                .position(|&token| token == "name" || token == "Name")
-                .and_then(|i| split_ws.get(i + 1))
-                .expect("Couldn't get option name");
+            println!("id name Starlynn");
+            println!("id name zzzzz");
+            println!("option name Hash type spin default 32 min 1 max 131072");
+            println!("option name Threads type spin default 1 min 1 max 1");
 
-            let value_str: &str = split_ws
-                .iter()
-                .position(|&token| token == "value" || token == "Value")
-                .and_then(|i| split_ws.get(i + 1))
-                .expect("Couldn't get option value");
+            #[cfg(feature = "tune")]
+            print_params_options();
 
-            match name {
-                "Hash" | "hash" => {
-                    *tt = TT::new(value_str.parse().expect("Error parsing Hash option value"));
-                    tt.print_size::<false>();
-                }
-                _ => println!("info string Unknown option {name}"),
-            }
+            println!("uciok");
         }
+        "setoption" => uci_setoption(&split_ws, td, tt),
         "ucinewgame" => {
             td.ucinewgame();
             tt.reset_keep_size();
@@ -124,7 +112,57 @@ pub fn run_command(command: &str, td: &mut ThreadData, tt: &mut TT) {
         "tt" | "TT" | "hash" | "Hash" | "hashfull" | "Hashfull" => {
             tt.print_fullness::<false>();
         }
+        #[cfg(feature = "tune")]
+        "print_params_openbench" => {
+            print_params_openbench();
+        }
         _ => {}
+    }
+}
+
+fn uci_setoption(tokens: &Vec<&str>, #[allow(unused_variables)] td: &mut ThreadData, tt: &mut TT) {
+    let name: &str = tokens
+        .iter()
+        .position(|&token| token == "name" || token == "Name")
+        .and_then(|i| tokens.get(i + 1))
+        .expect("Couldn't get option name");
+
+    let value_str: &str = tokens
+        .iter()
+        .position(|&token| token == "value" || token == "Value")
+        .and_then(|i| tokens.get(i + 1))
+        .expect("Couldn't get option value");
+
+    #[cfg(feature = "tune")]
+    macro_rules! stringify_tunable_param {
+        ($param_name:ident) => {{
+            let _ = $param_name(); // Ensure the tunable param exists
+            stringify!($param_name) // Return stringified
+        }};
+    }
+
+    match name {
+        "Hash" | "hash" => {
+            *tt = TT::new(value_str.parse().expect("Error parsing Hash option value"));
+            tt.print_size::<false>();
+        }
+        "Threads" | "threads" => {}
+        _ => {
+            #[cfg(feature = "tune")]
+            if set_tunable_param(name, value_str) {
+                if name == stringify_tunable_param!(lmr_base_quiet)
+                    || name == stringify_tunable_param!(lmr_mul_quiet)
+                    || name == stringify_tunable_param!(lmr_base_noisy)
+                    || name == stringify_tunable_param!(lmr_mul_noisy)
+                {
+                    td.lmr_table = get_lmr_table();
+                }
+
+                return;
+            }
+
+            println!("info string Unknown option {name}");
+        }
     }
 }
 
@@ -184,9 +222,9 @@ fn uci_go(tokens: &[&str], td: &mut ThreadData, tt: &mut TT) {
             time_ms = time_ms.saturating_sub(OVERHEAD_MS);
 
             if token1 != "movetime" {
-                time_ms = (time_ms as f64 * HARD_TIME_PERCENTAGE).round() as u64;
+                time_ms = (time_ms as f64 * tm_hard_percent()).round() as u64;
 
-                let soft_time_ms: u64 = (time_ms as f64 * SOFT_TIME_PERCENTAGE).round() as u64;
+                let soft_time_ms: u64 = (time_ms as f64 * tm_soft_percent()).round() as u64;
                 limits.max_soft_duration = Some(Duration::from_millis(soft_time_ms));
             }
 

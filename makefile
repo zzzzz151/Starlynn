@@ -14,3 +14,6 @@ all:
 
 debug:
 	$(RUST_ENV) cargo rustc -- $(RUSTC_FLAGS) -C opt-level=3 -C debug-assertions --emit link=$(NAME_AND_EXT)
+
+tune:
+	$(RUST_ENV) cargo rustc --release --features tune -- $(RUSTC_FLAGS) --emit link=$(NAME_AND_EXT)

@@ -625,23 +625,23 @@ impl PosState {
 
     // Static exchange evaluation
     pub fn see_ge(&self, mov: ChessMove, threshold: i32) -> bool {
-        const PIECE_VALUES: [i32; 6] = [100, 300, 300, 500, 900, 0];
+        use crate::search::params::get_value;
 
         let mut score: i32 = -threshold;
 
         if let Some(pt_captured) = self.piece_type_captured_by(mov) {
-            score += PIECE_VALUES[pt_captured];
+            score += get_value(pt_captured);
         }
 
         if let Some(promo_pt) = mov.promotion() {
-            score += PIECE_VALUES[promo_pt] - PIECE_VALUES[PieceType::Pawn];
+            score += get_value(promo_pt) - get_value(PieceType::Pawn);
         }
 
         if score < 0 {
             return false;
         }
 
-        score -= PIECE_VALUES[mov.promotion().unwrap_or(mov.piece_type())];
+        score -= get_value(mov.promotion().unwrap_or(mov.piece_type()));
 
         if score >= 0 {
             return true;
@@ -699,7 +699,7 @@ impl PosState {
             score = -score - 1;
 
             if let Some(least_valuable_pt) = least_valuable_pt {
-                score -= PIECE_VALUES[least_valuable_pt];
+                score -= get_value(least_valuable_pt);
             }
 
             // If our only attacker is our king, but the opponent still has defenders
@@ -964,6 +964,13 @@ mod tests {
 
     #[test]
     fn test_see() {
+        use crate::search::params::set_tunable_param;
+
+        assert!(set_tunable_param("pawn_value", "100"));
+        assert!(set_tunable_param("minor_piece_value", "300"));
+        assert!(set_tunable_param("rook_value", "500"));
+        assert!(set_tunable_param("queen_value", "900"));
+
         #[rustfmt::skip]
         let test_suite = [
             ("6k1/1pp4p/p1pb4/6q1/3P1pRr/2P4P/PP1Br1P1/5RKN w - -", "f1f4", -100),
