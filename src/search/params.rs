@@ -111,30 +111,30 @@ macro_rules! tunable_params {
 }
 
 tunable_params! {
-    tm_hard_percent: f64 = 0.75, 0.5, 0.8, 0.05;
-    tm_soft_percent: f64 = 0.05, 0.01, 0.25, 0.015;
-    tm_nodes_base: f64 = 2.0, 1.5, 2.0, 0.1;
-    tm_nodes_mul: f64 = 1.5, 1.0, 1.5, 0.1;
-    pawn_value: i32 = 100, 50, 150, 50;
-    minor_piece_value: i32 = 300, 200, 400, 50;
-    rook_value: i32 = 500, 400, 600, 50;
-    queen_value: i32 = 900, 600, 1200, 100;
-    asp_initial: i32 = 16, 5, 25, 5;
-    rfp_mul: i32 = 75, 30, 130, 10;
-    razoring_base: i32 = 350, 200, 600, 40;
-    razoring_mul: i32 = 275, 200, 600, 10;
-    fp_base: i32 = 120, 60, 260, 20;
-    fp_mul: i32 = 120, 60, 260, 10;
-    see_threshold_noisy: i32 = -100, -210, -10, 20;
-    see_threshold_quiet: i32 = -50, -210, -10, 20;
+    tm_hard_percent: f64 = 0.79, 0.5, 0.8, 0.05;
+    tm_soft_percent: f64 = 0.076, 0.01, 0.25, 0.015;
+    tm_nodes_base: f64 = 1.81, 1.5, 2.0, 0.1;
+    tm_nodes_mul: f64 = 1.47, 1.0, 1.5, 0.1;
+    pawn_value: i32 = 133, 50, 150, 50;
+    minor_piece_value: i32 = 284, 200, 400, 50;
+    rook_value: i32 = 439, 400, 600, 50;
+    queen_value: i32 = 902, 600, 1200, 100;
+    asp_initial: i32 = 13, 5, 25, 5;
+    rfp_mul: i32 = 54, 30, 130, 10;
+    razoring_base: i32 = 351, 200, 600, 40;
+    razoring_mul: i32 = 268, 200, 600, 10;
+    fp_base: i32 = 115, 60, 260, 20;
+    fp_mul: i32 = 112, 60, 260, 10;
+    see_threshold_noisy: i32 = -115, -210, -10, 20;
+    see_threshold_quiet: i32 = -67, -210, -10, 20;
     double_ext_margin: i32 = 25, 1, 51, 10;
-    lmr_base_quiet: f64 = 0.8, 0.2, 1.2, 0.1;
-    lmr_mul_quiet: f64 = 0.4, 0.2, 1.0, 0.1;
-    lmr_base_noisy: f64 = 0.8, 0.2, 1.2, 0.1;
+    lmr_base_quiet: f64 = 0.89, 0.2, 1.2, 0.1;
+    lmr_mul_quiet: f64 = 0.37, 0.2, 1.0, 0.1;
+    lmr_base_noisy: f64 = 0.85, 0.2, 1.2, 0.1;
     lmr_mul_noisy: f64 = 0.4, 0.2, 1.0, 0.1;
-    corr_hist_pk_weight: f32 = 1.0, 0.5, 2.0, 0.15;
-    corr_hist_nbrqk_weight: f32 = 1.0, 0.5, 2.0, 0.15;
-    corr_hist_last_move_weight: f32 = 1.0, 0.5, 2.0, 0.15;
+    corr_hist_pk_weight: f32 = 1.03, 0.5, 2.0, 0.15;
+    corr_hist_nbrqk_weight: f32 = 1.48, 0.5, 2.0, 0.15;
+    corr_hist_last_move_weight: f32 = 1.16, 0.5, 2.0, 0.15;
 }
 
 #[cfg(not(feature = "tune"))]
