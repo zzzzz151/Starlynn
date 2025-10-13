@@ -354,7 +354,9 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         moves_seen += 1;
 
         let is_quiet_or_underpromo: bool = td.pos.is_quiet_or_underpromotion(mov);
-        let is_quiet_or_losing: bool = is_quiet_or_underpromo || !td.pos.see_ge(mov, 0);
+
+        let is_quiet_or_losing: bool =
+            is_quiet_or_underpromo || (Some(mov) != tt_move && !td.pos.see_ge(mov, 0));
 
         // Move pruning at shallow depths
         if !IS_ROOT && best_score > -MIN_MATE_SCORE && is_quiet_or_losing {
