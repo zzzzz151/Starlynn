@@ -4,7 +4,7 @@ use debug_unwraps::DebugUnwrapExt;
 use std::cmp::Ordering;
 
 use crate::nn::{
-    accumulator::BothAccumulators,
+    both_accumulators::HLActivated,
     value_policy_heads::{ScoredMoves, get_policy_logits},
 };
 
@@ -27,7 +27,7 @@ impl MovePicker {
         &mut self,
         pos: &Position,
         legal_moves: &MovesList,
-        both_accs: &mut BothAccumulators,
+        hl_activated: &HLActivated,
     ) -> Option<(ChessMove, Option<f32>)> {
         // Return TT move?
         if self.moves_returned == 0
@@ -40,7 +40,7 @@ impl MovePicker {
         // Compute logits if not already computed
         if self.moves_returned == (self.tt_move.is_some() as usize) {
             self.scored_moves =
-                get_policy_logits::<Q_SEARCH>(both_accs, pos, legal_moves, self.tt_move);
+                get_policy_logits::<Q_SEARCH>(hl_activated, pos, legal_moves, self.tt_move);
         }
 
         // Find move with highest logit, remove it from the scored_moves list, and return it

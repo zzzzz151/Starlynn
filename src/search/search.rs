@@ -1,19 +1,18 @@
 use super::limits::SearchLimits;
 use super::move_picker::MovePicker;
 use super::params::*;
-use super::thread_data::ThreadData;
+use super::thread_data::{StackEntry, ThreadData};
 use super::tt::TT;
 use super::tt_entry::{Bound, TTEntry};
 use crate::GetCheckedIfDebug;
 use crate::chess::{chess_move::ChessMove, move_gen::MovesList, position::Position, types::Color};
-
-use crate::nn::{
-    accumulator::BothAccumulators, value_policy_heads::ScoredMoves,
-    value_policy_heads::get_policy_logits,
-};
-
 use arrayvec::ArrayVec;
 use std::num::NonZeroU16;
+
+use crate::nn::{
+    both_accumulators::BothAccumulators,
+    value_policy_heads::{ScoredMoves, get_policy_logits},
+};
 
 // Returns best move and nodes
 pub fn search<const PRINT_INFO: bool>(
@@ -22,6 +21,12 @@ pub fn search<const PRINT_INFO: bool>(
     tt: &mut TT,
 ) -> (Option<ChessMove>, u64) {
     limits.max_duration_hit = false;
+
+    td.nodes = 1;
+
+    td.stack[0].pv.clear();
+    td.stack[0].is_hl_updated = false;
+    td.stack[0].raw_eval = None;
 
     let root_legal_moves: MovesList = td.pos.legal_moves();
 
@@ -34,10 +39,14 @@ pub fn search<const PRINT_INFO: bool>(
         .max_nodes
         .is_some_and(|max_nodes| max_nodes.get() == 1)
     {
-        let mut both_accs = BothAccumulators::from(&td.pos);
+        let both_accs = BothAccumulators::from(&td.pos);
 
-        let logits: ScoredMoves =
-            get_policy_logits::<false>(&mut both_accs, &td.pos, &td.pos.legal_moves(), None);
+        let logits: ScoredMoves = get_policy_logits::<false>(
+            &both_accs.activated(),
+            &td.pos,
+            &td.pos.legal_moves(),
+            None,
+        );
 
         let (best_move, _) = logits
             .into_iter()
@@ -49,15 +58,9 @@ pub fn search<const PRINT_INFO: bool>(
         return (Some(best_move), 1);
     }
 
-    td.nodes = 1;
-
     for mov in root_legal_moves {
         td.nodes_by_move[NonZeroU16::from(mov).get() as usize] = 0;
     }
-
-    td.stack[0].pv.clear();
-    td.stack[0].both_accs.build_accumulators(&td.pos);
-    td.stack[0].raw_eval = None;
 
     let mut score: i32 = 0;
 
@@ -267,6 +270,8 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         }
     }
 
+    td.ensure_hidden_layer_updated(accs_idx);
+
     let eval: i32 = td.static_eval(ply as usize, accs_idx);
 
     // Max ply?
@@ -295,7 +300,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
             && beta.abs() < MIN_MATE_SCORE
             && eval >= beta
         {
-            td.make_move(None, ply, accs_idx);
+            td.make_move(None, ply as usize, accs_idx);
 
             // Null move search
             let score: i32 = -pvs::<false, false>(
@@ -341,10 +346,9 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
     let mut best_move: Option<ChessMove> = None;
 
     while let Some((mov, _logit)) = {
-        let both_accs: &mut BothAccumulators =
-            unsafe { &mut td.stack.get_mut_checked_if_debug(accs_idx).both_accs };
+        let stack_entry: &StackEntry = td.stack.get_checked_if_debug(accs_idx);
 
-        move_picker.next::<false>(&td.pos, &legal_moves, both_accs)
+        move_picker.next::<false>(&td.pos, &legal_moves, &stack_entry.hl_activated)
     } {
         // In singular searches, skip TT move
         if Some(mov) == singular_move {
@@ -423,7 +427,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
 
         let nodes_before: u64 = td.nodes;
 
-        td.make_move(Some(mov), ply, accs_idx);
+        td.make_move(Some(mov), ply as usize, accs_idx);
 
         let mut score: i32 = 0;
         let mut do_full_depth_zws: bool = !PV_NODE || moves_seen > 1;
@@ -433,12 +437,11 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
             let mut reduced_depth: i32 = new_depth;
 
             // Base reduction
-            reduced_depth -= unsafe {
-                td.lmr_table
-                    .get_checked_if_debug(depth as usize)
-                    .get_checked_if_debug(moves_seen)
-                    .get_checked_if_debug(!is_quiet_or_underpromo as usize)
-            };
+            reduced_depth -= td
+                .lmr_table
+                .get_checked_if_debug(depth as usize)
+                .get_checked_if_debug(moves_seen)
+                .get_checked_if_debug(!is_quiet_or_underpromo as usize);
 
             // Reduction adjustments
             reduced_depth += PV_NODE as i32;
@@ -600,6 +603,8 @@ fn q_search<const PV_NODE: bool>(
         }
     }
 
+    td.ensure_hidden_layer_updated(accs_idx);
+
     let eval: i32 = td.static_eval(ply as usize, accs_idx);
 
     // Max ply or static eval fails high?
@@ -620,12 +625,11 @@ fn q_search<const PV_NODE: bool>(
     let mut best_move: Option<ChessMove> = None;
 
     while let Some((mov, _logit)) = {
-        let both_accs: &mut BothAccumulators =
-            unsafe { &mut td.stack.get_mut_checked_if_debug(accs_idx).both_accs };
+        let stack_entry: &StackEntry = td.stack.get_checked_if_debug(accs_idx);
 
-        move_picker.next::<true>(&td.pos, &legal_moves, both_accs)
+        move_picker.next::<true>(&td.pos, &legal_moves, &stack_entry.hl_activated)
     } {
-        td.make_move(Some(mov), ply, accs_idx);
+        td.make_move(Some(mov), ply as usize, accs_idx);
 
         let score: i32 = -q_search::<PV_NODE>(limits, td, tt, ply + 1, -beta, -alpha, accs_idx + 1);
 

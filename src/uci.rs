@@ -9,7 +9,7 @@ use crate::chess::{
     util::FEN_START,
 };
 
-use crate::nn::{accumulator::BothAccumulators, value_policy_heads::*};
+use crate::nn::{both_accumulators::BothAccumulators, value_policy_heads::*};
 
 use crate::search::{
     bench::{DEFAULT_BENCH_DEPTH, bench},
@@ -92,14 +92,22 @@ pub fn run_command(command: &str, td: &mut ThreadData, tt: &mut TT) {
             bench(depth);
         }
         "eval" | "evaluate" | "evaluation" | "raweval" | "value" => {
-            let mut both_accs = BothAccumulators::from(&td.pos);
-            println!("eval {}", value_eval(&mut both_accs, td.pos.side_to_move()));
+            let both_accs = BothAccumulators::from(&td.pos);
+
+            println!(
+                "eval {}",
+                value_eval(&both_accs.activated(), td.pos.side_to_move())
+            );
         }
         "policy" => {
-            let mut both_accs = BothAccumulators::from(&td.pos);
+            let both_accs = BothAccumulators::from(&td.pos);
 
-            let mut policy: ScoredMoves =
-                get_policy_logits::<false>(&mut both_accs, &td.pos, &td.pos.legal_moves(), None);
+            let mut policy: ScoredMoves = get_policy_logits::<false>(
+                &both_accs.activated(),
+                &td.pos,
+                &td.pos.legal_moves(),
+                None,
+            );
 
             softmax(&mut policy);
 
