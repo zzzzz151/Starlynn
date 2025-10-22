@@ -125,7 +125,7 @@ impl ThreadData {
 
     // Returns static eval corrected
     pub fn static_eval(&mut self, ply: usize, accs_idx: usize) -> i32 {
-        debug_assert!(self.stack.get_checked_if_debug(accs_idx).is_hl_updated);
+        debug_assert!(self.stack[accs_idx].is_hl_updated);
 
         let raw_eval: i32 = self
             .stack

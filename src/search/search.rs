@@ -1,7 +1,7 @@
 use super::limits::SearchLimits;
 use super::move_picker::MovePicker;
 use super::params::*;
-use super::thread_data::{StackEntry, ThreadData};
+use super::thread_data::ThreadData;
 use super::tt::TT;
 use super::tt_entry::{Bound, TTEntry};
 use crate::GetCheckedIfDebug;
@@ -345,11 +345,11 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
     let mut bound = Bound::Upper;
     let mut best_move: Option<ChessMove> = None;
 
-    while let Some((mov, _logit)) = {
-        let stack_entry: &StackEntry = td.stack.get_checked_if_debug(accs_idx);
-
-        move_picker.next::<false>(&td.pos, &legal_moves, &stack_entry.hl_activated)
-    } {
+    while let Some((mov, _logit)) = move_picker.next::<false>(
+        &td.pos,
+        &legal_moves,
+        &td.stack.get_checked_if_debug(accs_idx).hl_activated,
+    ) {
         // In singular searches, skip TT move
         if Some(mov) == singular_move {
             continue;
@@ -624,11 +624,11 @@ fn q_search<const PV_NODE: bool>(
     let mut bound = Bound::Upper;
     let mut best_move: Option<ChessMove> = None;
 
-    while let Some((mov, _logit)) = {
-        let stack_entry: &StackEntry = td.stack.get_checked_if_debug(accs_idx);
-
-        move_picker.next::<true>(&td.pos, &legal_moves, &stack_entry.hl_activated)
-    } {
+    while let Some((mov, _logit)) = move_picker.next::<true>(
+        &td.pos,
+        &legal_moves,
+        &td.stack.get_checked_if_debug(accs_idx).hl_activated,
+    ) {
         td.make_move(Some(mov), ply as usize, accs_idx);
 
         let score: i32 = -q_search::<PV_NODE>(limits, td, tt, ply + 1, -beta, -alpha, accs_idx + 1);
@@ -712,6 +712,7 @@ fn get_terminal_score<const IS_ROOT: bool>(
 
 fn update_history(value: &mut i16, bonus: i32) {
     debug_assert!(bonus.abs() <= HISTORY_MAX);
-    let delta: i32 = bonus - bonus.abs() * (*value as i32) / HISTORY_MAX;
-    *value += delta as i16;
+    let new_value: i32 = *value as i32 + bonus - bonus.abs() * (*value as i32) / HISTORY_MAX;
+    debug_assert!(new_value.abs() <= HISTORY_MAX);
+    *value = new_value as i16;
 }
