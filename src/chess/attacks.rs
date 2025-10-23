@@ -15,7 +15,7 @@ impl<const ATTACKS_TABLE_SIZE: usize> MagicEntry<ATTACKS_TABLE_SIZE> {
         let blockers: Bitboard = occ & self.attacks_empty_board_excluding_last_sq_each_dir;
         let idx = u64::from(blockers).wrapping_mul(self.magic) >> self.shift;
 
-        unsafe { *(self.attacks_by_key.get_checked_if_debug(idx as usize)) }
+        *(self.attacks_by_key.get_checked_if_debug(idx as usize))
     }
 }
 

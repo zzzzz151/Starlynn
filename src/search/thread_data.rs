@@ -1,14 +1,20 @@
 use super::params::*;
 use crate::GetCheckedIfDebug;
 use crate::chess::{chess_move::ChessMove, position::Position, types::Color, util::FEN_START};
-use crate::nn::{accumulator::BothAccumulators, value_policy_heads::value_eval};
 use arrayvec::ArrayVec;
 use debug_unwraps::DebugUnwrapExt;
 use std::array::from_fn;
 
+use crate::nn::{
+    both_accumulators::{BothAccumulators, HLActivated},
+    value_policy_heads::value_eval,
+};
+
 pub struct StackEntry {
     pub(crate) pv: ArrayVec<ChessMove, { MAX_DEPTH as usize + 1 }>, // Principal variation
     pub(crate) both_accs: BothAccumulators,
+    pub(crate) hl_activated: HLActivated,
+    pub(crate) is_hl_updated: bool,
     pub(crate) raw_eval: Option<i32>,
     // pub(crate) scored_moves: Option<ScoredMoves>
 }
@@ -37,6 +43,8 @@ impl ThreadData {
             stack: from_fn(|_| StackEntry {
                 pv: ArrayVec::new_const(),
                 both_accs: BothAccumulators::new(),
+                hl_activated: [[0; _]; 2],
+                is_hl_updated: false,
                 raw_eval: None,
             }),
             lmr_table: get_lmr_table(),
@@ -53,7 +61,7 @@ impl ThreadData {
         self.last_move_corr_hist = [[[0; 64]; 6]; 2];
     }
 
-    pub fn make_move(&mut self, mov: Option<ChessMove>, ply_before: u32, accs_idx_before: usize) {
+    pub fn make_move(&mut self, mov: Option<ChessMove>, ply_before: usize, accs_idx_before: usize) {
         if let Some(mov) = mov {
             self.pos.make_move(mov);
         } else {
@@ -61,49 +69,76 @@ impl ThreadData {
         }
 
         self.nodes += 1;
-        self.sel_depth = self.sel_depth.max(ply_before + 1);
+        self.sel_depth = self.sel_depth.max(ply_before as u32 + 1);
+
+        let new_stack_entry: &mut StackEntry = self.stack.get_mut_checked_if_debug(ply_before + 1);
+
+        new_stack_entry.pv.clear();
+        new_stack_entry.raw_eval = None;
+
+        self.stack
+            .get_mut_checked_if_debug(accs_idx_before + 1)
+            .is_hl_updated = false;
+    }
+
+    // Update principal variation
+    pub fn update_pv(&mut self, ply: usize, mov: ChessMove) {
+        let child_pv = self.stack.get_checked_if_debug(ply + 1).pv.clone();
+        let pv = &mut self.stack.get_mut_checked_if_debug(ply).pv;
 
         unsafe {
-            let new_stack_entry: &mut StackEntry =
-                self.stack.get_mut_checked_if_debug(ply_before as usize + 1);
+            pv.clear();
+            pv.push_unchecked(mov);
 
-            new_stack_entry.pv.clear();
-            new_stack_entry.raw_eval = None;
-
-            self.stack
-                .get_mut_checked_if_debug(accs_idx_before + 1)
-                .both_accs
-                .set_not_updated();
+            for next_move in child_pv {
+                pv.push_unchecked(next_move);
+            }
         }
     }
 
-    pub fn update_both_accs(&mut self, accs_idx: usize) -> &mut BothAccumulators {
-        let (left, right) = self.stack.split_at_mut(accs_idx);
-
-        let both_accs: &mut BothAccumulators =
-            unsafe { &mut right.first_mut().debug_unwrap_unchecked().both_accs };
-
-        if let Some(prev_stack_entry) = left.last() {
-            both_accs.update(&prev_stack_entry.both_accs, &self.pos);
+    pub fn ensure_hidden_layer_updated(&mut self, accs_idx: usize) {
+        if self.stack.get_checked_if_debug(accs_idx).is_hl_updated {
+            return;
         }
 
-        both_accs
+        if accs_idx == 0 {
+            self.stack[0].both_accs = BothAccumulators::from(&self.pos);
+        } else {
+            let (left, right) = self.stack.split_at_mut(accs_idx);
+
+            debug_assert!(left.last().unwrap().is_hl_updated);
+
+            unsafe {
+                right
+                    .first_mut()
+                    .debug_unwrap_unchecked()
+                    .both_accs
+                    .update(&left.last().debug_unwrap_unchecked().both_accs, &self.pos);
+            }
+        }
+
+        let stack_entry: &mut StackEntry = self.stack.get_mut_checked_if_debug(accs_idx);
+
+        stack_entry.hl_activated = stack_entry.both_accs.activated();
+        stack_entry.is_hl_updated = true;
     }
 
     // Returns static eval corrected
     pub fn static_eval(&mut self, ply: usize, accs_idx: usize) -> i32 {
-        let stack_entry: &StackEntry = unsafe { self.stack.get_checked_if_debug(ply) };
+        debug_assert!(self.stack[accs_idx].is_hl_updated);
 
-        let raw_eval: i32 = stack_entry.raw_eval.unwrap_or_else(|| {
-            let raw_eval: i32 = {
-                let stm: Color = self.pos.side_to_move();
-                let both_accs: &mut BothAccumulators = self.update_both_accs(accs_idx);
-                value_eval(both_accs, stm).clamp(-MIN_MATE_SCORE + 1, MIN_MATE_SCORE - 1)
-            };
+        let raw_eval: i32 = self
+            .stack
+            .get_checked_if_debug(ply)
+            .raw_eval
+            .unwrap_or_else(|| {
+                value_eval(
+                    &self.stack.get_checked_if_debug(accs_idx).hl_activated,
+                    self.pos.side_to_move(),
+                )
+            });
 
-            let stack_entry: &mut StackEntry = unsafe { self.stack.get_mut_checked_if_debug(ply) };
-            *(stack_entry.raw_eval.insert(raw_eval))
-        });
+        self.stack.get_mut_checked_if_debug(ply).raw_eval = Some(raw_eval);
 
         let mut correction: f32 = *(self.pawns_kings_corr()) as f32 * corr_hist_pk_weight();
 
@@ -138,21 +173,6 @@ impl ThreadData {
             Some(&mut self.last_move_corr_hist[stm][last_move.piece_type()][last_move.dst()])
         } else {
             None
-        }
-    }
-
-    // Update principal variation
-    pub fn update_pv(&mut self, ply: usize, mov: ChessMove) {
-        unsafe {
-            let child_pv = self.stack.get_checked_if_debug(ply + 1).pv.clone();
-            let pv = &mut self.stack.get_mut_checked_if_debug(ply).pv;
-
-            pv.clear();
-            pv.push_unchecked(mov);
-
-            for next_move in child_pv {
-                pv.push_unchecked(next_move);
-            }
         }
     }
 }

@@ -9,16 +9,6 @@ use delegate::delegate;
 #[derive(Clone)]
 pub struct Position(Vec<PosState>);
 
-impl TryFrom<&str> for Position {
-    type Error = String;
-
-    fn try_from(fen: &str) -> Result<Self, Self::Error> {
-        let mut pos = Position(Vec::with_capacity(512));
-        pos.0.push(PosState::try_from(fen)?);
-        Ok(pos)
-    }
-}
-
 #[allow(dead_code)]
 impl Position {
     delegate! {
@@ -97,6 +87,16 @@ impl Position {
             .skip(2)
             .step_by(2)
             .any(|pos_state| pos_state.zobrist_hash() == current_hash)
+    }
+}
+
+impl TryFrom<&str> for Position {
+    type Error = String;
+
+    fn try_from(fen: &str) -> Result<Self, Self::Error> {
+        let mut pos = Position(Vec::with_capacity(512));
+        pos.0.push(PosState::try_from(fen)?);
+        Ok(pos)
     }
 }
 

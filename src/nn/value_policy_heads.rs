@@ -1,4 +1,4 @@
-use super::accumulator::BothAccumulators;
+use super::both_accumulators::HLActivated;
 use super::params::*;
 use crate::GetCheckedIfDebug;
 use crate::chess::{chess_move::ChessMove, move_gen::MovesList, position::Position, types::*};
@@ -6,17 +6,12 @@ use arrayvec::ArrayVec;
 
 pub type ScoredMoves = ArrayVec<(ChessMove, f32), 256>;
 
-pub fn value_eval(both_accs: &mut BothAccumulators, stm: Color) -> i32 {
-    let hl_activated: &[[i16; HL_SIZE / 2]; 2] = both_accs.activated_accs();
-
+pub fn value_eval(hl_activated: &HLActivated, side_to_move: Color) -> i32 {
     let mut result: f32 = 0.0;
 
-    for (is_nstm, &color) in [stm, !stm].iter().enumerate() {
-        for i in 0..(HL_SIZE / 2) {
-            unsafe {
-                result += hl_activated[color][i] as f32 * NET.out_w_value.get_unchecked(is_nstm)[i];
-            }
-        }
+    for i in 0..(HL_SIZE / 2) {
+        result += hl_activated[side_to_move][i] as f32 * NET.out_w_value[0][i];
+        result += hl_activated[!side_to_move][i] as f32 * NET.out_w_value[1][i];
     }
 
     result /= (FT_Q * FT_Q) as f32;
@@ -26,7 +21,7 @@ pub fn value_eval(both_accs: &mut BothAccumulators, stm: Color) -> i32 {
 }
 
 pub fn get_policy_logits<const Q_SEARCH: bool>(
-    both_accs: &mut BothAccumulators,
+    hl_activated: &HLActivated,
     pos: &Position,
     legal_moves: &MovesList,
     exclude_move: Option<ChessMove>,
@@ -44,7 +39,6 @@ pub fn get_policy_logits<const Q_SEARCH: bool>(
             continue;
         }
 
-        let hl_activated: &[[i16; HL_SIZE / 2]; 2] = both_accs.activated_accs();
         let mut dst_for_logit_idx: Square = mov.dst();
 
         if pos.side_to_move() == Color::Black {
@@ -72,18 +66,17 @@ pub fn get_policy_logits<const Q_SEARCH: bool>(
 
         let mut logit: f32 = 0.0;
 
+        let out_w: &[[f32; HL_SIZE / 2]; 2] = NET.out_w_policy.get_checked_if_debug(logit_idx);
+
+        for i in 0..(HL_SIZE / 2) {
+            logit += hl_activated[pos.side_to_move()][i] as f32 * out_w[0][i];
+            logit += hl_activated[!pos.side_to_move()][i] as f32 * out_w[1][i];
+        }
+
+        logit /= (FT_Q * FT_Q) as f32;
+        logit += *NET.out_b_policy.get_checked_if_debug(logit_idx);
+
         unsafe {
-            let out_w: &[[f32; HL_SIZE / 2]; 2] = NET.out_w_policy.get_checked_if_debug(logit_idx);
-
-            for (is_nstm, &color) in [pos.side_to_move(), !pos.side_to_move()].iter().enumerate() {
-                for i in 0..(HL_SIZE / 2) {
-                    logit += hl_activated[color][i] as f32 * out_w.get_unchecked(is_nstm)[i];
-                }
-            }
-
-            logit /= (FT_Q * FT_Q) as f32;
-            logit += *NET.out_b_policy.get_checked_if_debug(logit_idx);
-
             logits.push_unchecked((mov, logit));
         }
     }
@@ -108,6 +101,7 @@ pub fn softmax(policy_logits: &mut ScoredMoves) {
 mod tests {
     use super::*;
     use crate::chess::{position::Position, util::FEN_START};
+    use crate::nn::both_accumulators::BothAccumulators;
     use std::collections::HashMap;
 
     const FEN_START_FLIPPED: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1";
@@ -128,10 +122,10 @@ mod tests {
     fn test_value() {
         let assert_value_eval = |fen: &str, expected_eval: i32| {
             let pos = Position::try_from(fen).unwrap();
-            let mut both_accs = BothAccumulators::from(&pos);
+            let both_accs = BothAccumulators::from(&pos);
 
             assert_eq!(
-                value_eval(&mut both_accs, pos.side_to_move()),
+                value_eval(&both_accs.activated(), pos.side_to_move()),
                 expected_eval
             );
         };
@@ -271,10 +265,10 @@ mod tests {
 
         let assert_policy = |fen: &str, expected: &HashMap<&str, (f32, f32)>| {
             let pos = Position::try_from(fen).unwrap();
-            let mut both_accs = BothAccumulators::from(&pos);
+            let both_accs = BothAccumulators::from(&pos);
 
             let logits: ScoredMoves =
-                get_policy_logits::<false>(&mut both_accs, &pos, &pos.legal_moves(), None);
+                get_policy_logits::<false>(&both_accs.activated(), &pos, &pos.legal_moves(), None);
 
             assert_eq!(logits.len(), expected.len());
 

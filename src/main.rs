@@ -15,7 +15,7 @@ pub trait GetCheckedIfDebug<T> {
     /// # Safety
     ///
     /// UB if `idx >= self.len()`
-    unsafe fn get_checked_if_debug(&self, idx: usize) -> &T;
+    fn get_checked_if_debug(&self, idx: usize) -> &T;
 
     /// Returns a reference to the element at `idx`.
     /// Bounds are checked in debug but not in release.
@@ -23,18 +23,18 @@ pub trait GetCheckedIfDebug<T> {
     /// # Safety
     ///
     /// UB if `idx >= self.len()`
-    unsafe fn get_mut_checked_if_debug(&mut self, idx: usize) -> &mut T;
+    fn get_mut_checked_if_debug(&mut self, idx: usize) -> &mut T;
 }
 
 impl<T, const N: usize> GetCheckedIfDebug<T> for [T; N] {
     #[inline]
-    unsafe fn get_checked_if_debug(&self, idx: usize) -> &T {
+    fn get_checked_if_debug(&self, idx: usize) -> &T {
         debug_assert!(idx < self.len());
         unsafe { self.get_unchecked(idx) }
     }
 
     #[inline]
-    unsafe fn get_mut_checked_if_debug(&mut self, idx: usize) -> &mut T {
+    fn get_mut_checked_if_debug(&mut self, idx: usize) -> &mut T {
         debug_assert!(idx < self.len());
         unsafe { self.get_unchecked_mut(idx) }
     }
