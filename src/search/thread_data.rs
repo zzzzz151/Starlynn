@@ -4,6 +4,7 @@ use crate::chess::{chess_move::ChessMove, position::Position, types::Color, util
 use arrayvec::ArrayVec;
 use debug_unwraps::DebugUnwrapExt;
 use std::array::from_fn;
+use std::mem::zeroed;
 
 use crate::nn::{
     both_accumulators::{BothAccumulators, HLActivated},
@@ -34,31 +35,36 @@ pub struct ThreadData {
 
 impl ThreadData {
     pub fn new() -> Self {
-        ThreadData {
-            pos: Position::try_from(FEN_START).unwrap(),
-            nodes: 0,
-            nodes_by_move: [0; u16::MAX as usize],
-            root_depth: 1,
-            sel_depth: 0,
-            stack: from_fn(|_| StackEntry {
-                pv: ArrayVec::new_const(),
-                both_accs: BothAccumulators::new(),
-                hl_activated: [[0; _]; 2],
-                is_hl_updated: false,
-                raw_eval: None,
-            }),
-            lmr_table: get_lmr_table(),
-            pawns_kings_corr_hist: [[0; CORR_HIST_SIZE]; 2],
-            non_pawns_corr_hist: [[[0; CORR_HIST_SIZE]; 2]; 2],
-            last_move_corr_hist: [[[0; 64]; 6]; 2],
+        unsafe {
+            ThreadData {
+                pos: Position::try_from(FEN_START).unwrap(),
+                nodes: 0,
+                nodes_by_move: zeroed(),
+                root_depth: 1,
+                sel_depth: 0,
+                stack: from_fn(|_| StackEntry {
+                    pv: ArrayVec::new_const(),
+                    both_accs: BothAccumulators::new(),
+                    hl_activated: zeroed(),
+                    is_hl_updated: false,
+                    raw_eval: None,
+                }),
+                lmr_table: get_lmr_table(),
+                pawns_kings_corr_hist: zeroed(),
+                non_pawns_corr_hist: zeroed(),
+                last_move_corr_hist: zeroed(),
+            }
         }
     }
 
     pub fn ucinewgame(&mut self) {
         self.pos = Position::try_from(FEN_START).unwrap();
-        self.pawns_kings_corr_hist = [[0; CORR_HIST_SIZE]; 2];
-        self.non_pawns_corr_hist = [[[0; CORR_HIST_SIZE]; 2]; 2];
-        self.last_move_corr_hist = [[[0; 64]; 6]; 2];
+
+        unsafe {
+            self.pawns_kings_corr_hist = zeroed();
+            self.non_pawns_corr_hist = zeroed();
+            self.last_move_corr_hist = zeroed();
+        }
     }
 
     pub fn make_move(&mut self, mov: Option<ChessMove>, ply_before: usize, accs_idx_before: usize) {

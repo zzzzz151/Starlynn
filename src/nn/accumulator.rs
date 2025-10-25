@@ -1,4 +1,5 @@
 use super::params::{FT_Q, HL_SIZE, NET};
+use crate::Align64;
 use crate::chess::{chess_move::ChessMove, pos_state::PosState, position::Position, types::*};
 use debug_unwraps::DebugUnwrapExt;
 use std::mem::{MaybeUninit, transmute};
@@ -18,9 +19,9 @@ impl<const IS_WHITE_POV: bool> Accumulator<IS_WHITE_POV> {
     }
 
     // Activation is CReLU + pairwise mul
-    pub fn activated(&self) -> [i16; HL_SIZE / 2] {
-        let mut result: [MaybeUninit<i16>; HL_SIZE / 2] =
-            [const { MaybeUninit::uninit() }; HL_SIZE / 2];
+    pub fn activated(&self) -> Align64<[i16; HL_SIZE / 2]> {
+        let mut result: Align64<[MaybeUninit<i16>; HL_SIZE / 2]> =
+            Align64([const { MaybeUninit::uninit() }; HL_SIZE / 2]);
 
         for (i, result_elem) in result.iter_mut().enumerate() {
             let x1: i16 = self.0[i * 2].clamp(0, FT_Q);

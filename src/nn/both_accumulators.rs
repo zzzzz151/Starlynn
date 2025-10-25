@@ -1,8 +1,9 @@
 use super::accumulator::Accumulator;
 use super::params::HL_SIZE;
+use crate::Align64;
 use crate::chess::position::Position;
 
-pub type HLActivated = [[i16; HL_SIZE / 2]; 2];
+pub type HLActivated = Align64<[[i16; HL_SIZE / 2]; 2]>;
 
 #[repr(C, align(64))]
 #[derive(Clone)]
@@ -20,7 +21,7 @@ impl BothAccumulators {
     }
 
     pub fn activated(&self) -> HLActivated {
-        [self.white.activated(), self.black.activated()]
+        Align64([self.white.activated().0, self.black.activated().0])
     }
 
     pub fn update(&mut self, prev_accs: &BothAccumulators, pos_after_move: &Position) {

@@ -5,8 +5,26 @@ mod nn;
 mod search;
 mod uci;
 
+use core::ops::{Deref, DerefMut};
 use search::{thread_data::ThreadData, tt::TT};
 use std::num::NonZeroUsize;
+
+#[repr(align(64))]
+pub struct Align64<T>(pub T);
+
+impl<T> Deref for Align64<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for Align64<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 pub trait GetCheckedIfDebug<T> {
     /// Returns a reference to the element at `idx`.
