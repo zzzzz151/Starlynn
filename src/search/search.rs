@@ -259,7 +259,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
     if !PV_NODE
         && singular_move.is_none()
         && let Some(tt_bound) = tt_bound
-        && tt_depth >= depth
+        && tt_depth >= depth - ((tt_bound == Bound::Upper && tt_score <= alpha) as i32)
     {
         #[allow(clippy::collapsible_if)]
         if tt_bound == Bound::Exact
