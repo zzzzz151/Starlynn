@@ -344,6 +344,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
     let mut best_score: i32 = -INF;
     let mut bound = Bound::Upper;
     let mut best_move: Option<ChessMove> = None;
+    let mut depths_sum: u32 = 0;
 
     while let Some((mov, _logit)) = move_picker.next::<false>(
         &td.pos,
@@ -430,6 +431,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
         td.make_move(Some(mov), ply as usize, accs_idx);
 
         let mut score: i32 = 0;
+        let mut max_depth_searched: i32 = 0;
         let mut do_full_depth_zws: bool = !PV_NODE || moves_seen > 1;
 
         // LMR (late move reductions)
@@ -446,7 +448,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
             // Reduction adjustments
             reduced_depth += PV_NODE as i32;
             reduced_depth += td.pos.in_check() as i32;
-            reduced_depth = reduced_depth.min(new_depth);
+            reduced_depth = reduced_depth.clamp(0, new_depth);
 
             // Reduced depth, zero window search
             score = -pvs::<false, false>(
@@ -461,6 +463,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
                 None,
             );
 
+            max_depth_searched = reduced_depth;
             do_full_depth_zws = reduced_depth < new_depth && score > alpha;
         }
 
@@ -477,6 +480,8 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
                 accs_idx + 1,
                 None,
             );
+
+            max_depth_searched = max_depth_searched.max(new_depth);
         }
 
         // Full depth, full window search
@@ -492,9 +497,14 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
                 accs_idx + 1,
                 None,
             );
+
+            max_depth_searched = max_depth_searched.max(new_depth);
         }
 
         td.pos.undo_move();
+
+        debug_assert!(max_depth_searched >= 0);
+        depths_sum += max_depth_searched as u32 + 1;
 
         if IS_ROOT {
             td.nodes_by_move[NonZeroU16::from(mov).get() as usize] += td.nodes - nodes_before;
@@ -532,7 +542,7 @@ fn pvs<const IS_ROOT: bool, const PV_NODE: bool>(
     // Update TT entry
     tt[tt_idx].update(
         td.pos.zobrist_hash(),
-        depth as u8,
+        (depths_sum / (moves_seen as u32)) as u8,
         best_score as i16,
         ply,
         bound,
